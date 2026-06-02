@@ -377,8 +377,8 @@ public sealed class BotRunner
         Language = s.Language, Nickname = s.Nickname, TeraType = s.TeraType,
     };
 
-    // The format alone (code block only) so copying it grabs nothing else.
-    private string BuildTradeText(Session s) => $"```\n{_svc.ToShowdown(BuildConfig(s))}\n```";
+    // Plain text (no code fences) so copy/paste is clean — no ``` and nothing else.
+    private string BuildTradeText(Session s) => _svc.ToShowdown(BuildConfig(s));
 
     // ───────────────── UI ─────────────────
 
