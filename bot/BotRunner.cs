@@ -199,7 +199,14 @@ public sealed class BotRunner
             case "shiny": if (s.Meta?.CanBeShiny == true) s.Shiny = !s.Shiny; break;
             case "alpha": if (s.Meta?.HasAlpha == true) s.Alpha = !s.Alpha; break;
             case "customot": s.UseCustomOT = !s.UseCustomOT; break;
-            case "generate": await c.RespondAsync(BuildTradeText(s), ephemeral: true); return;
+            case "generate":
+                if (s.Species == 0) { await c.RespondAsync("Pick a Pokémon first.", ephemeral: true); return; }
+                // Instruction first, then the format ALONE in its own message so it copies cleanly.
+                await c.RespondAsync(
+                    $"📋 Copy the format below and paste it into the **{GameName(s.Game)}** bot channel, then send it to request this Pokémon:",
+                    ephemeral: true);
+                await c.FollowupAsync(BuildTradeText(s), ephemeral: true);
+                return;
         }
         await c.UpdateAsync(m => { m.Embed = BuildEmbed(s); m.Components = BuildComponents(s); });
     }
@@ -370,13 +377,8 @@ public sealed class BotRunner
         Language = s.Language, Nickname = s.Nickname, TeraType = s.TeraType,
     };
 
-    private string BuildTradeText(Session s)
-    {
-        if (s.Species == 0) return "Pick a Pokémon first (**Set Pokémon**).";
-        var format = _svc.ToShowdown(BuildConfig(s));
-        return $"```\n{format}\n```\n" +
-               $"📋 Copy and paste this format into the **{GameName(s.Game)}** bot channel and click send to request this Pokémon.";
-    }
+    // The format alone (code block only) so copying it grabs nothing else.
+    private string BuildTradeText(Session s) => $"```\n{_svc.ToShowdown(BuildConfig(s))}\n```";
 
     // ───────────────── UI ─────────────────
 
