@@ -81,6 +81,15 @@ public sealed class MainForm : Form
         save.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 120);
         save.Click += (_, _) => { SaveConfig(); Append("Settings saved."); };
 
+        var panel = new Button { Text = "📌 Post Panel", Width = 120, Height = 38, FlatStyle = FlatStyle.Flat };
+        panel.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 120);
+        panel.ForeColor = Color.FromArgb(110, 231, 183);
+        panel.Click += async (_, _) =>
+        {
+            if (!_running) { MessageBox.Show("Start the bot first.", "Not running", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            await _runner.PostPanelAsync();
+        };
+
         var update = new Button { Text = "⭳ Update", Width = 110, Height = 38, FlatStyle = FlatStyle.Flat };
         update.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 120);
         update.ForeColor = Color.FromArgb(96, 165, 250);
@@ -88,6 +97,7 @@ public sealed class MainForm : Form
 
         buttons.Controls.Add(_startStop);
         buttons.Controls.Add(save);
+        buttons.Controls.Add(panel);
         buttons.Controls.Add(update);
         buttons.Controls.Add(new Panel { Width = 16, Height = 1 });
         _status.Margin = new Padding(8, 12, 0, 0);

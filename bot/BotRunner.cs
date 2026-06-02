@@ -54,7 +54,6 @@ public sealed class BotRunner
         _client.Ready += OnReady;
         _client.Connected += () => { IsRunning = true; Log?.Invoke("Connected."); return Task.CompletedTask; };
         _client.Disconnected += _ => { IsRunning = false; Log?.Invoke("Disconnected."); return Task.CompletedTask; };
-        _client.SlashCommandExecuted += OnSlash;
         _client.SelectMenuExecuted += OnSelect;
         _client.ButtonExecuted += OnButton;
         _client.ModalSubmitted += OnModal;
@@ -78,39 +77,49 @@ public sealed class BotRunner
 
     private async Task OnReady()
     {
-        var cmd = new SlashCommandBuilder()
-            .WithName("create").WithDescription("Build a legal Pokémon (full editor) and get its .trade text").Build();
+        // No slash commands — interaction is via the persistent channel panel.
+        // Clean up any previously-registered /create so it disappears.
         try
         {
-            if (ulong.TryParse(_guildId, out var gid) && _client!.GetGuild(gid) is { } guild)
-            {
-                await guild.CreateApplicationCommandAsync(cmd);
-                Log?.Invoke($"Ready. /create registered to server {gid} (instant).");
-            }
-            else
-            {
-                await _client!.CreateGlobalApplicationCommandAsync(cmd);
-                Log?.Invoke("Ready. /create registered globally (can take up to ~1h the first time).");
-            }
+            await _client!.BulkOverwriteGlobalApplicationCommandsAsync([]);
+            if (ulong.TryParse(_guildId, out var gid) && _client.GetGuild(gid) is { } guild)
+                await guild.BulkOverwriteApplicationCommandAsync([]);
         }
-        catch (Exception ex) { Log?.Invoke("Command registration failed: " + ex.Message); }
+        catch (Exception ex) { Log?.Invoke("Command cleanup note: " + ex.Message); }
+
+        Log?.Invoke("Ready. Use \"Post Creator Panel\" to place the button in your channel.");
+    }
+
+    /// <summary>Posts the permanent creator panel (embed + button) into the configured channel.</summary>
+    public async Task PostPanelAsync()
+    {
+        if (_client is null || !IsRunning) { Log?.Invoke("Start the bot before posting the panel."); return; }
+        if (_channelId == 0) { Log?.Invoke("Set a Channel ID first, then post the panel."); return; }
+
+        var channel = _client.GetChannel(_channelId) as IMessageChannel
+                      ?? await _client.Rest.GetChannelAsync(_channelId) as IMessageChannel;
+        if (channel is null)
+        {
+            Log?.Invoke($"Could not find channel {_channelId}. Check the Channel ID and that the bot can see it.");
+            return;
+        }
+
+        var embed = new EmbedBuilder()
+            .WithTitle("✨ Pokémon Creator")
+            .WithDescription("Click **Create Pokémon** below to build a fully legal Pokémon.\n" +
+                             "Your editor is **private — only you can see it**, and you'll get the `.trade` text when you're done.")
+            .WithColor(new Color(0x7c, 0x3a, 0xed))
+            .Build();
+
+        var comp = new ComponentBuilder()
+            .WithButton("🛠️ Create Pokémon", "open_creator", ButtonStyle.Primary)
+            .Build();
+
+        await channel.SendMessageAsync(embed: embed, components: comp);
+        Log?.Invoke($"Posted creator panel to channel {_channelId}.");
     }
 
     // ───────────────── interaction handlers ─────────────────
-
-    private async Task OnSlash(SocketSlashCommand cmd)
-    {
-        if (cmd.CommandName != "create") return;
-        if (_channelId != 0 && cmd.ChannelId != _channelId)
-        {
-            await cmd.RespondAsync($"❌ This bot can only be used in <#{_channelId}>.", ephemeral: true);
-            return;
-        }
-        var s = new Session();
-        ApplyGame(s, "SV");
-        _sessions[cmd.User.Id] = s;
-        await cmd.RespondAsync(embed: BuildEmbed(s), components: BuildComponents(s), ephemeral: true);
-    }
 
     private async Task OnSelect(SocketMessageComponent c)
     {
@@ -133,6 +142,21 @@ public sealed class BotRunner
 
     private async Task OnButton(SocketMessageComponent c)
     {
+        // The panel button opens a fresh private editor for whoever clicked.
+        if (c.Data.CustomId == "open_creator")
+        {
+            if (_channelId != 0 && c.ChannelId != _channelId)
+            {
+                await c.RespondAsync($"❌ This panel only works in <#{_channelId}>.", ephemeral: true);
+                return;
+            }
+            var fresh = new Session();
+            ApplyGame(fresh, "SV");
+            _sessions[c.User.Id] = fresh;
+            await c.RespondAsync(embed: BuildEmbed(fresh), components: BuildComponents(fresh), ephemeral: true);
+            return;
+        }
+
         if (!_sessions.TryGetValue(c.User.Id, out var s)) { await Stale(c); return; }
         switch (c.Data.CustomId)
         {
@@ -481,7 +505,7 @@ public sealed class BotRunner
     private static string FormatStats(int[] v) => string.Join(" / ", StatNames.Select((n, i) => $"{n} {v[i]}"));
     private static string SectionLabel(string id) => Sections.FirstOrDefault(x => x.Item1 == id).Item2 ?? id;
 
-    private static Task Stale(SocketInteraction i) => i.RespondAsync("Session expired — run `/create` again.", ephemeral: true);
+    private static Task Stale(SocketInteraction i) => i.RespondAsync("Session expired — click **Create Pokémon** again.", ephemeral: true);
 
     private sealed class Session
     {
