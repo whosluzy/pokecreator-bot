@@ -76,5 +76,6 @@ public record PokemonMeta(
     int MinLevel,        // lowest legal non-alpha encounter level
     int MaxLevel,        // always 100 (can train any Pokemon)
     int AlphaMinLevel,   // lowest alpha encounter level (0 if no alpha encounters)
-    int AlphaMaxLevel    // highest alpha encounter level (0 if no alpha encounters)
+    int AlphaMaxLevel,   // highest alpha encounter level (0 if no alpha encounters)
+    int ShinyMinLevel    // lowest level a SHINY can legally be (event-shiny mons differ, e.g. shiny Koraidon = 100)
 );

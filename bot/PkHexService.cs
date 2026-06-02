@@ -366,19 +366,44 @@ public class PkHexService
 
         var personal = GameData.GetPersonal(version);
         var pi = personal.GetFormEntry((ushort)species, (byte)form);
+
+        int a1 = pi.AbilityCount > 0 ? pi.GetAbilityAtIndex(0) : 0;
+        int a2 = pi.AbilityCount > 1 ? pi.GetAbilityAtIndex(1) : 0;
+        int ah = pi.AbilityCount > 2 ? pi.GetAbilityAtIndex(2) : 0;
+
+        // Which ability slots are legal across every encounter/event this species can
+        // come from (incl. HOME/GO). Events that lock an ability slot are respected.
+        var pk = CreateBlankPkm(version);
+        pk.Species = (ushort)species; pk.Form = (byte)form; pk.Version = version;
+        var encs = EncounterMovesetGenerator
+            .GenerateEncounters(pk, ReadOnlyMemory<ushort>.Empty, ShinyVersions)
+            .ToList();
+
+        bool any12h = encs.Count == 0, any12 = false, s0 = false, s1 = false, s2 = false;
+        foreach (var e in encs)
+            switch (e.Ability)
+            {
+                case AbilityPermission.Any12H: any12h = true; break;
+                case AbilityPermission.Any12: any12 = true; break;
+                case AbilityPermission.OnlyFirst: s0 = true; break;
+                case AbilityPermission.OnlySecond: s1 = true; break;
+                case AbilityPermission.OnlyHidden: s2 = true; break;
+            }
+        bool allow0 = any12h || any12 || s0;
+        bool allow1 = any12h || any12 || s1;
+        bool allow2 = any12h || s2;
+
         var result = new List<AbilityInfo>();
-
-        int count = pi.AbilityCount;
         var seen = new HashSet<int>();
-
-        for (int i = 0; i < count && i < 3; i++)
+        void Add(int id, bool hidden, bool allow)
         {
-            int abilityId = pi.GetAbilityAtIndex(i);
-            if (abilityId <= 0 || !seen.Add(abilityId)) continue;
-            if (abilityId >= _strings.Ability.Count) continue;
-            result.Add(new AbilityInfo(abilityId, _strings.Ability[abilityId], i == 2));
+            if (allow && id > 0 && id < _strings.Ability.Count && seen.Add(id))
+                result.Add(new AbilityInfo(id, _strings.Ability[id], hidden));
         }
-
+        Add(a1, false, allow0);
+        Add(a2, false, allow1);
+        Add(ah, true, allow2);
+        if (result.Count == 0) Add(a1, false, true); // never leave it empty
         return result;
     }
 
@@ -484,11 +509,21 @@ public class PkHexService
         // Shiny is allowed unless the species is shiny-locked in EVERY source game.
         // Checks all HOME-connected games + GO, since a shiny obtained elsewhere can
         // be transferred in even if this game's own encounter is shiny-locked.
-        bool canBeShiny = EncounterMovesetGenerator
+        var shinyAll = EncounterMovesetGenerator
             .GenerateEncounters(pk, ReadOnlyMemory<ushort>.Empty, ShinyVersions)
-            .Any(e => e.Shiny != Shiny.Never);
+            .ToList();
+        bool canBeShiny = shinyAll.Any(e => e.Shiny != Shiny.Never);
 
-        return new PokemonMeta(validGenders, statSystem, statMax, statTotal, hasTeraType, canBeShiny, hasScale, hasAlpha, minLevel, 100, alphaMinLevel, alphaMaxLevel);
+        // Lowest level a SHINY can legally be — based ONLY on shiny-capable encounters.
+        // For event-shiny-only mons this differs from the normal minimum
+        // (e.g. shiny Koraidon/Miraidon can only exist at Lv100).
+        var shinySelf = shinyAll.Where(e => e.Species == (ushort)species && e.Shiny != Shiny.Never).ToList();
+        int shinyMinLevel =
+            shinySelf.Count > 0 ? shinySelf.Min(e => (int)e.LevelMin)
+            : canBeShiny ? EvolutionMinLevel(context, (ushort)species, (byte)form)
+            : minLevel;
+
+        return new PokemonMeta(validGenders, statSystem, statMax, statTotal, hasTeraType, canBeShiny, hasScale, hasAlpha, minLevel, 100, alphaMinLevel, alphaMaxLevel, shinyMinLevel);
     }
 
     public List<NatureInfo> GetNatures()

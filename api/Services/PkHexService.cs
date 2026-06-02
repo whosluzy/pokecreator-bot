@@ -470,11 +470,19 @@ public class PkHexService
         // Shiny is allowed unless the species is shiny-locked in EVERY source game
         // (incl. GO) — a shiny obtained elsewhere can be HOME-transferred in even if
         // this game's own encounter is shiny-locked.
-        bool canBeShiny = EncounterMovesetGenerator
+        var shinyAll = EncounterMovesetGenerator
             .GenerateEncounters(pk, ReadOnlyMemory<ushort>.Empty, ShinyVersions)
-            .Any(e => e.Shiny != Shiny.Never);
+            .ToList();
+        bool canBeShiny = shinyAll.Any(e => e.Shiny != Shiny.Never);
 
-        return new PokemonMeta(validGenders, statSystem, statMax, statTotal, hasTeraType, canBeShiny, hasScale, hasAlpha, minLevel, 100, alphaMinLevel, alphaMaxLevel);
+        // Lowest level a shiny can legally be (event-shiny mons differ, e.g. shiny Koraidon = 100).
+        var shinySelf = shinyAll.Where(e => e.Species == (ushort)species && e.Shiny != Shiny.Never).ToList();
+        int shinyMinLevel =
+            shinySelf.Count > 0 ? shinySelf.Min(e => (int)e.LevelMin)
+            : canBeShiny ? EvolutionMinLevel(metaContext, (ushort)species, (byte)form)
+            : minLevel;
+
+        return new PokemonMeta(validGenders, statSystem, statMax, statTotal, hasTeraType, canBeShiny, hasScale, hasAlpha, minLevel, 100, alphaMinLevel, alphaMaxLevel, shinyMinLevel);
     }
 
     public List<NatureInfo> GetNatures()

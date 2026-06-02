@@ -187,7 +187,12 @@ public sealed class BotRunner
             // ── wizard steps ──
             case "wiz_search": await c.RespondWithModalAsync(SearchModal()); return;
             case "wiz_back": s.Step = PrevStep(s); break;
-            case "shiny_yes": s.Shiny = true; s.Step = NextAfterShiny(s); break;
+            case "shiny_yes":
+                s.Shiny = true;
+                if (s.Meta is { ShinyMinLevel: > 0 } && s.Level < s.Meta.ShinyMinLevel)
+                    s.Level = s.Meta.ShinyMinLevel;   // e.g. shiny Koraidon → 100
+                s.Step = NextAfterShiny(s);
+                break;
             case "shiny_no": s.Shiny = false; s.Step = NextAfterShiny(s); break;
             case "shiny_continue": s.Shiny = false; s.Step = NextAfterShiny(s); break;
             case "alpha_yes":
@@ -654,6 +659,9 @@ public sealed class BotRunner
         // so any final evolution can be raised to 100.
         int min = s.Alpha && s.Meta?.AlphaMinLevel > 0 ? s.Meta.AlphaMinLevel
                 : s.Meta?.MinLevel > 0 ? s.Meta.MinLevel : 1;
+        // Shiny event-only mons have a higher shiny floor (e.g. shiny Koraidon = 100).
+        if (s.Shiny && s.Meta is { ShinyMinLevel: > 0 } && s.Meta.ShinyMinLevel > min)
+            min = s.Meta.ShinyMinLevel;
         int max = 100;
         if (max < min) max = min;
 
