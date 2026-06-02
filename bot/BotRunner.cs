@@ -515,7 +515,7 @@ public sealed class BotRunner
         }
         _ = r;
         b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 4);
-        b.WithButton("⚡ Generate .trade", "generate", ButtonStyle.Success, disabled: s.Species == 0, row: 4);
+        b.WithButton("⚡ Get Bot Ready Format", "generate", ButtonStyle.Success, disabled: s.Species == 0, row: 4);
         return b.Build();
     }
 
