@@ -189,6 +189,7 @@ public sealed class BotRunner
             case "wiz_back": s.Step = PrevStep(s); break;
             case "shiny_yes": s.Shiny = true; s.Step = NextAfterShiny(s); break;
             case "shiny_no": s.Shiny = false; s.Step = NextAfterShiny(s); break;
+            case "shiny_continue": s.Shiny = false; s.Step = NextAfterShiny(s); break;
             case "alpha_yes":
                 s.Alpha = true;
                 if (s.Meta?.AlphaMinLevel > 0) s.Level = s.Meta.AlphaMinLevel;
@@ -343,7 +344,8 @@ public sealed class BotRunner
 
     // ── wizard step flow ──
     private static bool AlphaApplicable(Session s) => s.Meta is { HasAlpha: true, AlphaMinLevel: > 0 };
-    private static int NextAfterPokemon(Session s) => s.Meta?.CanBeShiny == true ? 2 : AlphaApplicable(s) ? 3 : 4;
+    // Always visit the shiny step — it shows Yes/No, or a "no shiny version" notice.
+    private static int NextAfterPokemon(Session s) => 2;
     private static int NextAfterShiny(Session s) => AlphaApplicable(s) ? 3 : 4;
     private static int PrevStep(Session s) => s.Step switch
     {
@@ -441,8 +443,12 @@ public sealed class BotRunner
                         eb2.AddField("Matches", string.Join(", ", s.SearchResults.Take(10).Select(x => x.Name + (x.FormName != null ? $" ({x.FormName})" : ""))), false);
                     break;
                 case 2:
-                    eb2.WithTitle("Step 3 · Shiny?")
-                       .WithDescription($"**{chosen}** in **{GameName(s.Game)}**\n\nDo you want it **Shiny** ✨?");
+                    if (s.Meta?.CanBeShiny == true)
+                        eb2.WithTitle("Step 3 · Shiny?")
+                           .WithDescription($"**{chosen}** in **{GameName(s.Game)}**\n\nDo you want it **Shiny** ✨?");
+                    else
+                        eb2.WithTitle("Step 3 · Shiny")
+                           .WithDescription($"✨ **This Pokémon does not exist in a shiny version.**\n\nContinue to finish building **{chosen}**.");
                     break;
                 case 3:
                     eb2.WithTitle("Step 4 · Alpha?")
@@ -486,11 +492,7 @@ public sealed class BotRunner
     {
         0 => new ComponentBuilder().WithSelectMenu(GameMenu(s), 0).Build(),
         1 => BuildPokemonStep(s),
-        2 => new ComponentBuilder()
-                .WithButton("✨ Yes, Shiny", "shiny_yes", ButtonStyle.Success, row: 0)
-                .WithButton("No", "shiny_no", ButtonStyle.Secondary, row: 0)
-                .WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1)
-                .Build(),
+        2 => BuildShinyStep(s),
         3 => new ComponentBuilder()
                 .WithButton("α Yes, Alpha", "alpha_yes", ButtonStyle.Success, row: 0)
                 .WithButton("No", "alpha_no", ButtonStyle.Secondary, row: 0)
@@ -498,6 +500,22 @@ public sealed class BotRunner
                 .Build(),
         _ => BuildCustomizeComponents(s),
     };
+
+    private static MessageComponent BuildShinyStep(Session s)
+    {
+        var b = new ComponentBuilder();
+        if (s.Meta?.CanBeShiny == true)
+        {
+            b.WithButton("✨ Yes, Shiny", "shiny_yes", ButtonStyle.Success, row: 0);
+            b.WithButton("No", "shiny_no", ButtonStyle.Secondary, row: 0);
+        }
+        else
+        {
+            b.WithButton("Continue ▶", "shiny_continue", ButtonStyle.Primary, row: 0);
+        }
+        b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1);
+        return b.Build();
+    }
 
     private MessageComponent BuildPokemonStep(Session s)
     {
