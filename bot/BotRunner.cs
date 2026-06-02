@@ -603,17 +603,18 @@ public sealed class BotRunner
     }
     private static SelectMenuBuilder LevelMenu(Session s)
     {
-        // Minimum legal level (alpha shifts it); then a 5-step ladder up to 100.
+        // Mirror the website exactly: alpha → [alphaMin .. alphaMax]; else [min .. 100].
         int min = s.Alpha && s.Meta?.AlphaMinLevel > 0 ? s.Meta.AlphaMinLevel
                 : s.Meta?.MinLevel > 0 ? s.Meta.MinLevel : 1;
+        int max = s.Alpha && s.Meta?.AlphaMaxLevel > 0 ? s.Meta.AlphaMaxLevel : 100;
+        if (max < min) max = min;
 
         var levels = new List<int> { min };
-        for (int l = (min / 5 + 1) * 5; l <= 100; l += 5) levels.Add(l);
-        if (!levels.Contains(100)) levels.Add(100);
-        if (!levels.Contains(s.Level) && s.Level >= min) levels.Add(s.Level);
-        levels = levels.Where(l => l >= min && l <= 100).Distinct().OrderBy(x => x).Take(25).ToList();
+        for (int l = (min / 5 + 1) * 5; l <= max; l += 5) levels.Add(l);
+        if (!levels.Contains(max)) levels.Add(max);
+        levels = levels.Where(l => l >= min && l <= max).Distinct().OrderBy(x => x).Take(25).ToList();
 
-        var m = new SelectMenuBuilder().WithCustomId("level").WithPlaceholder($"Level (min {min})");
+        var m = new SelectMenuBuilder().WithCustomId("level").WithPlaceholder($"Level ({min}–{max})");
         foreach (var l in levels) m.AddOption($"Level {l}", l.ToString(), isDefault: l == s.Level);
         return m;
     }
