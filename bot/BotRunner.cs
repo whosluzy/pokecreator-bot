@@ -613,10 +613,17 @@ public sealed class BotRunner
         return m;
     }
 
+    // Games hidden from the bot for now (data/logic kept intact, just not listed).
+    private static readonly HashSet<string> HiddenGames = ["PLA", "LGLE"];
+
     private SelectMenuBuilder GameMenu(Session s)
     {
         var m = new SelectMenuBuilder().WithCustomId("game").WithPlaceholder("Game");
-        foreach (var g in _svc.GetGames()) m.AddOption(g.Name, g.Id, isDefault: g.Id == s.Game);
+        foreach (var g in _svc.GetGames())
+        {
+            if (HiddenGames.Contains(g.Id)) continue;
+            m.AddOption(g.Name, g.Id, isDefault: g.Id == s.Game);
+        }
         return m;
     }
     private static SelectMenuBuilder LevelMenu(Session s)
