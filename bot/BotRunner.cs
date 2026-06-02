@@ -210,6 +210,8 @@ public sealed class BotRunner
                 await c.RespondWithModalAsync(SearchModalFor("item_search", "Search held item"));
                 return;
             case "item_clear": s.HeldItem = 0; s.ItemResults = []; break;
+            case "open_balls": s.Section = "balls"; break;
+            case "back_items": s.Section = "items"; break;
             case "edit_extras": await c.RespondWithModalAsync(ExtrasModal(s)); return;
             case "edit_trainer": await c.RespondWithModalAsync(TrainerModal(s)); return;
             case "shiny": if (s.Meta?.CanBeShiny == true) s.Shiny = !s.Shiny; break;
@@ -531,7 +533,9 @@ public sealed class BotRunner
             var pick = new SelectMenuBuilder().WithCustomId("pick").WithPlaceholder("Pick your Pokémon…");
             foreach (var r in list.OrderBy(x => x.Name).Take(25))
             {
-                var label = r.Name + (r.FormName != null ? $" ({r.FormName})" : "") + (r.Native ? "" : " ⇄HOME");
+                // Pikachu's alternate forms are hats/caps → tag "Hat" instead of HOME.
+                string tag = r.Id == 25 && r.Form > 0 ? " (Hat)" : r.Native ? "" : " ⇄HOME";
+                var label = r.Name + (r.FormName != null ? $" ({r.FormName})" : "") + tag;
                 pick.AddOption(label.Length > 100 ? label[..100] : label, $"{r.Id}:{r.Form}");
             }
             b.WithSelectMenu(pick, 0);
@@ -543,6 +547,16 @@ public sealed class BotRunner
 
     private MessageComponent BuildCustomizeComponents(Session s)
     {
+        // Balls open in their own focused list (a press of a button).
+        if (s.Section == "balls")
+        {
+            var bb = new ComponentBuilder();
+            bb.WithSelectMenu(BallMenu(s), 0);
+            bb.WithButton("◀ Back", "back_items", ButtonStyle.Secondary, row: 1);
+            bb.WithButton("⚡ Get Bot Ready Format", "generate", ButtonStyle.Success, disabled: s.Species == 0, row: 1);
+            return bb.Build();
+        }
+
         var b = new ComponentBuilder();
         var sec = new SelectMenuBuilder().WithCustomId("section").WithPlaceholder("More options…");
         foreach (var (id, label) in Sections) sec.AddOption(label, id, isDefault: id == s.Section);
@@ -563,11 +577,11 @@ public sealed class BotRunner
                 if (s.Meta?.HasTeraType == true) b.WithSelectMenu(TeraMenu(s), r++);
                 break;
             case "items":
-                b.WithSelectMenu(BallMenu(s), r++);
+                b.WithSelectMenu(ItemPickMenu(s), r++);   // held-item list (A–Z; search narrows)
                 b.WithSelectMenu(LanguageMenu(s), r++);
-                b.WithSelectMenu(ItemPickMenu(s), r++);   // always shows a list (first 25 A–Z; search narrows)
-                b.WithButton("🔍 Search held item", "item_search", ButtonStyle.Primary, row: 3);
-                b.WithButton("Clear (None)", "item_clear", ButtonStyle.Secondary, row: 3);
+                b.WithButton($"Ball Caught: {BallName(s, s.Ball)}", "open_balls", ButtonStyle.Secondary, row: 3);
+                b.WithButton("🔍 Search item", "item_search", ButtonStyle.Primary, row: 3);
+                b.WithButton("Clear item", "item_clear", ButtonStyle.Secondary, row: 3);
                 break;
             case "statsmoves":
                 if (s.MoveResults.Count > 0) b.WithSelectMenu(MovePickMenu(s), r++);

@@ -108,7 +108,8 @@ public class PkHexService
                 // cosmetic colour/pattern variants. Every other form (Therian,
                 // Deoxys, Rotom appliances, Mega/Gigantamax, Zen, fusions, …) is an
                 // in-game form change and must NOT be offered here.
-                if (f > 0)
+                // Exception: Pikachu (25) — show ALL its hat/cap forms.
+                if (f > 0 && i != 25)
                 {
                     string fname = (f < formNames.Length ? formNames[f] : null) ?? "";
 
