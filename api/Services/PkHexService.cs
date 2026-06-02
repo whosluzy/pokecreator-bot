@@ -381,7 +381,11 @@ public class PkHexService
             int max = 1;
             foreach (var sp in lineage)
                 foreach (var meth in tree.Forward.GetForward(sp, form).Span)
-                    if (lineage.Contains(meth.Species) && meth.Level > max) max = meth.Level;
+                {
+                    if (!lineage.Contains(meth.Species)) continue;
+                    int step = meth.Level > 0 ? meth.Level : (meth.LevelUp != 0 ? 2 : 0);
+                    if (step > max) max = step;
+                }
             return max;
         }
         catch { return 1; }

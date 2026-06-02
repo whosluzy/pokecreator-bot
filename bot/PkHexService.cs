@@ -387,7 +387,13 @@ public class PkHexService
             int max = 1;
             foreach (var sp in lineage)
                 foreach (var meth in tree.Forward.GetForward(sp, form).Span)
-                    if (lineage.Contains(meth.Species) && meth.Level > max) max = meth.Level;
+                {
+                    if (!lineage.Contains(meth.Species)) continue;
+                    // Explicit level (e.g. 25) binds; a level-up evo (friendship/etc.)
+                    // needs ≥1 level gained → at least Lv2; item/trade need no level.
+                    int step = meth.Level > 0 ? meth.Level : (meth.LevelUp != 0 ? 2 : 0);
+                    if (step > max) max = step;
+                }
             return max;
         }
         catch { return 1; }

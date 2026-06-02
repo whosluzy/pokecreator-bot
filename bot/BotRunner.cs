@@ -603,10 +603,11 @@ public sealed class BotRunner
     }
     private static SelectMenuBuilder LevelMenu(Session s)
     {
-        // Mirror the website exactly: alpha → [alphaMin .. alphaMax]; else [min .. 100].
+        // Minimum is evolution-aware (alpha uses its own floor); max is always 100
+        // so any final evolution can be raised to 100.
         int min = s.Alpha && s.Meta?.AlphaMinLevel > 0 ? s.Meta.AlphaMinLevel
                 : s.Meta?.MinLevel > 0 ? s.Meta.MinLevel : 1;
-        int max = s.Alpha && s.Meta?.AlphaMaxLevel > 0 ? s.Meta.AlphaMaxLevel : 100;
+        int max = 100;
         if (max < min) max = min;
 
         var levels = new List<int> { min };
