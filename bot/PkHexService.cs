@@ -118,7 +118,7 @@ public class PkHexService
                         "Mega", "Primal", "Gigantamax", "Eternamax", "Busted", "Gorging",
                         "Gulping", "Hangry", "Noice", "Crowned", "Ash", "Eternal", "Bond",
                         "Original", "Hoenn", "Sinnoh", "Unova", "Kalos", "World", "Partner",
-                        "Starter", "Cosplay", "Cap",
+                        "Starter", "Cosplay", "Cap", "Garden",
                     ];
                     bool special = blocked.Any(x => fname.Contains(x, StringComparison.OrdinalIgnoreCase));
 
