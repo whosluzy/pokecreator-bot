@@ -372,10 +372,26 @@ public class PkHexService
         return result;
     }
 
+    private static int EvolutionMinLevel(EntityContext context, ushort species, byte form)
+    {
+        try
+        {
+            var tree = EvolutionTree.GetEvolutionTree(context);
+            var lineage = new HashSet<ushort>(tree.Reverse.GetPreEvolutions(species, form).Select(p => p.Species)) { species };
+            int max = 1;
+            foreach (var sp in lineage)
+                foreach (var meth in tree.Forward.GetForward(sp, form).Span)
+                    if (lineage.Contains(meth.Species) && meth.Level > max) max = meth.Level;
+            return max;
+        }
+        catch { return 1; }
+    }
+
     public PokemonMeta GetMeta(string game, int species, int form = 0)
     {
         if (!GameMap.TryGetValue(game, out var version))
             throw new ArgumentException($"Unknown game: {game}");
+        ContextMap.TryGetValue(game, out var metaContext);
 
         var pi = GameData.GetPersonal(version).GetFormEntry((ushort)species, (byte)form);
 
@@ -426,16 +442,19 @@ public class PkHexService
         }
 
         // Split encounters into alpha and non-alpha for separate level ranges
-        var alphaEncounters = allEncounters
-            .Where(e => e is EncounterSlot9a { IsAlpha: true })
-            .ToList();
-        var normalEncounters = allEncounters
-            .Where(e => e is not EncounterSlot9a { IsAlpha: true })
-            .ToList();
+        // Base levels on encounters of THIS exact species (not pre-evolutions), so
+        // evolved Pokémon don't inherit their pre-evo's egg (Lv1).
+        var selfEncounters = allEncounters.Where(e => e.Species == (ushort)species).ToList();
+        var alphaEncounters = selfEncounters.Where(e => e is EncounterSlot9a { IsAlpha: true }).ToList();
+        var normalSelf = selfEncounters.Where(e => e is not EncounterSlot9a { IsAlpha: true }).ToList();
 
-        int minLevel = normalEncounters.Count > 0
-            ? normalEncounters.Min(e => (int)e.LevelMin)
-            : (allEncounters.Count > 0 ? allEncounters.Min(e => (int)e.LevelMin) : 1);
+        int minLevel;
+        if (normalSelf.Count > 0)
+            minLevel = normalSelf.Min(e => (int)e.LevelMin);
+        else if (selfEncounters.Count > 0)
+            minLevel = selfEncounters.Min(e => (int)e.LevelMin);
+        else
+            minLevel = EvolutionMinLevel(metaContext, (ushort)species, (byte)form);
 
         int alphaMinLevel = alphaEncounters.Count > 0
             ? alphaEncounters.Min(e => (int)e.LevelMin) : 0;
