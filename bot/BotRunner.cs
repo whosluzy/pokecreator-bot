@@ -32,7 +32,7 @@ public sealed class BotRunner
 
     private static readonly (string, string)[] Sections =
     [
-        ("pokemon", "🔹 Species / Nature / Level / Form"),
+        ("pokemon", "🔹 Nature / Level / Form"),
         ("battle", "⚔️ Ability / Gender / Tera"),
         ("items", "🎒 Ball / Held Item / Language"),
         ("statsmoves", "📊 EVs / IVs / Moves"),
@@ -128,7 +128,23 @@ public sealed class BotRunner
         switch (c.Data.CustomId)
         {
             case "section": s.Section = v; break;
-            case "game": ApplyGame(s, v); break;
+            case "game":
+                ApplyGame(s, v);
+                if (s.Step == 0) { s.SearchResults = []; s.Step = 1; } // game -> pokemon
+                break;
+            case "pick":
+            {
+                var bits = v.Split(':');
+                int id = int.Parse(bits[0]), form = bits.Length > 1 ? int.Parse(bits[1]) : 0;
+                var pick = s.SpeciesList.FirstOrDefault(x => x.Id == id && x.Form == form);
+                if (pick != null)
+                {
+                    s.Species = pick.Id; s.SpeciesName = pick.Name; s.Form = pick.Form;
+                    ApplyMeta(s); RefreshLists(s);
+                    s.Step = NextAfterPokemon(s);
+                }
+                break;
+            }
             case "form": s.Form = int.Parse(v); ApplyMeta(s); RefreshLists(s); break;
             case "nature": s.Nature = int.Parse(v); break;
             case "ability": s.Ability = int.Parse(v); break;
@@ -150,7 +166,7 @@ public sealed class BotRunner
                 await c.RespondAsync($"❌ This panel only works in <#{_channelId}>.", ephemeral: true);
                 return;
             }
-            var fresh = new Session();
+            var fresh = new Session { Step = 0 };
             ApplyGame(fresh, "SV");
             _sessions[c.User.Id] = fresh;
             await c.RespondAsync(embed: BuildEmbed(fresh), components: BuildComponents(fresh), ephemeral: true);
@@ -160,6 +176,19 @@ public sealed class BotRunner
         if (!_sessions.TryGetValue(c.User.Id, out var s)) { await Stale(c); return; }
         switch (c.Data.CustomId)
         {
+            // ── wizard steps ──
+            case "wiz_search": await c.RespondWithModalAsync(SearchModal()); return;
+            case "wiz_back": s.Step = PrevStep(s); break;
+            case "shiny_yes": s.Shiny = true; s.Step = NextAfterShiny(s); break;
+            case "shiny_no": s.Shiny = false; s.Step = NextAfterShiny(s); break;
+            case "alpha_yes":
+                s.Alpha = true;
+                if (s.Meta?.AlphaMinLevel > 0) s.Level = s.Meta.AlphaMinLevel;
+                s.Step = 4;
+                break;
+            case "alpha_no": s.Alpha = false; s.Step = 4; break;
+
+            // ── customize controls ──
             case "set_pkm": await c.RespondWithModalAsync(PkmModal(s)); return;
             case "edit_stats": await c.RespondWithModalAsync(StatsModal(s)); return;
             case "edit_moves": await c.RespondWithModalAsync(MovesModal(s)); return;
@@ -182,6 +211,22 @@ public sealed class BotRunner
 
         switch (m.Data.CustomId)
         {
+            case "search_modal":
+            {
+                var q = Val("q").ToLowerInvariant();
+                s.SearchResults = s.SpeciesList
+                    .Where(x => x.Name.ToLowerInvariant().Contains(q)
+                             || (x.FormName?.ToLowerInvariant().Contains(q) ?? false))
+                    .Take(25).ToList();
+                if (s.SearchResults.Count == 1)
+                {
+                    var pick = s.SearchResults[0];
+                    s.Species = pick.Id; s.SpeciesName = pick.Name; s.Form = pick.Form;
+                    ApplyMeta(s); RefreshLists(s);
+                    s.Step = NextAfterPokemon(s);
+                }
+                break;
+            }
             case "pkm_modal":
             {
                 var match = ResolveSpecies(s, Val("name"));
@@ -250,6 +295,19 @@ public sealed class BotRunner
     }
 
     private List<ItemInfo> Items(string game) => _itemCache.GetOrAdd(game, g => _svc.GetItems(g));
+
+    // ── wizard step flow ──
+    private static bool AlphaApplicable(Session s) => s.Meta is { HasAlpha: true, AlphaMinLevel: > 0 };
+    private static int NextAfterPokemon(Session s) => s.Meta?.CanBeShiny == true ? 2 : AlphaApplicable(s) ? 3 : 4;
+    private static int NextAfterShiny(Session s) => AlphaApplicable(s) ? 3 : 4;
+    private static int PrevStep(Session s) => s.Step switch
+    {
+        4 => AlphaApplicable(s) ? 3 : (s.Meta?.CanBeShiny == true ? 2 : 1),
+        3 => s.Meta?.CanBeShiny == true ? 2 : 1,
+        2 => 1,
+        1 => 0,
+        _ => 0,
+    };
 
     private static SpeciesInfo? ResolveSpecies(Session s, string name)
     {
@@ -322,19 +380,51 @@ public sealed class BotRunner
     private Embed BuildEmbed(Session s)
     {
         var formTxt = s.Form > 0 ? $" ({FormNameOf(s)})" : "";
+        var chosen = s.Species == 0 ? "—" : $"{s.SpeciesName}{formTxt}";
+
+        // Guided steps get a focused embed.
+        if (s.Step < 4)
+        {
+            var eb2 = new EmbedBuilder().WithColor(new Color(0x7c, 0x3a, 0xed));
+            switch (s.Step)
+            {
+                case 0:
+                    eb2.WithTitle("Step 1 · Choose a Game")
+                       .WithDescription("Which game is this Pokémon for? Pick one below.");
+                    break;
+                case 1:
+                    eb2.WithTitle("Step 2 · Choose your Pokémon")
+                       .WithDescription($"**Game:** {GameName(s.Game)}\n\nClick **Search Pokémon**, type a name, then pick it from the list.");
+                    if (s.SearchResults.Count > 0)
+                        eb2.AddField("Matches", string.Join(", ", s.SearchResults.Take(10).Select(x => x.Name + (x.FormName != null ? $" ({x.FormName})" : ""))), false);
+                    break;
+                case 2:
+                    eb2.WithTitle("Step 3 · Shiny?")
+                       .WithDescription($"**{chosen}** in **{GameName(s.Game)}**\n\nDo you want it **Shiny** ✨?");
+                    break;
+                case 3:
+                    eb2.WithTitle("Step 4 · Alpha?")
+                       .WithDescription($"**{chosen}** can be an **Alpha** α in this game.\n\nMake it an Alpha?");
+                    break;
+            }
+            eb2.WithFooter("You can go ◀ Back anytime.");
+            return eb2.Build();
+        }
+
+        // Final step: full build summary.
         var statLabel = s.Meta?.StatSystem ?? "EV";
         var moves = string.Join(", ", s.Moves.Where(m => m > 0).Select(id => MoveName(s, id)));
         var eb = new EmbedBuilder()
-            .WithTitle("🛠️ PokeCreator — full editor")
+            .WithTitle($"🛠️ Customize — {chosen}")
             .WithColor(new Color(0x7c, 0x3a, 0xed))
             .AddField("Game", GameName(s.Game), true)
-            .AddField("Pokémon", s.Species == 0 ? "—" : $"{s.SpeciesName}{formTxt}", true)
+            .AddField("Pokémon", chosen, true)
             .AddField("Level", s.Level.ToString(), true)
+            .AddField("Shiny", s.Shiny ? "✨ Yes" : "No", true)
+            .AddField("Alpha", s.Meta?.HasAlpha == true ? (s.Alpha ? "α Yes" : "No") : "N/A", true)
             .AddField("Nature", NatureName(s.Nature), true)
             .AddField("Ability", AbilityName(s, s.Ability), true)
             .AddField("Gender", GenderName(s.Gender), true)
-            .AddField("Shiny", s.Shiny ? "✨ Yes" : "No", true)
-            .AddField("Alpha", s.Meta?.HasAlpha == true ? (s.Alpha ? "α Yes" : "No") : "N/A", true)
             .AddField("Ball", BallName(s, s.Ball), true)
             .AddField("Held Item", s.HeldItem == 0 ? "None" : ItemName(s, s.HeldItem), true)
             .AddField(statLabel + "s", FormatStats(s.EVs), true)
@@ -346,14 +436,49 @@ public sealed class BotRunner
 
         if (s.Meta?.HasTeraType == true) eb.AddField("Tera", TeraTypes.ElementAtOrDefault(s.TeraType) ?? "—", true);
         if (s.Meta?.HasScale == true) eb.AddField("Size", $"{s.Scale}", true);
-        eb.WithFooter($"Editing: {SectionLabel(s.Section)} — use the menu to switch sections");
+        eb.WithFooter("Tweak anything below, then ⚡ Generate. Optional — defaults are already legal.");
         return eb.Build();
     }
 
-    private MessageComponent BuildComponents(Session s)
+    private MessageComponent BuildComponents(Session s) => s.Step switch
+    {
+        0 => new ComponentBuilder().WithSelectMenu(GameMenu(s), 0).Build(),
+        1 => BuildPokemonStep(s),
+        2 => new ComponentBuilder()
+                .WithButton("✨ Yes, Shiny", "shiny_yes", ButtonStyle.Success, row: 0)
+                .WithButton("No", "shiny_no", ButtonStyle.Secondary, row: 0)
+                .WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1)
+                .Build(),
+        3 => new ComponentBuilder()
+                .WithButton("α Yes, Alpha", "alpha_yes", ButtonStyle.Success, row: 0)
+                .WithButton("No", "alpha_no", ButtonStyle.Secondary, row: 0)
+                .WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1)
+                .Build(),
+        _ => BuildCustomizeComponents(s),
+    };
+
+    private MessageComponent BuildPokemonStep(Session s)
     {
         var b = new ComponentBuilder();
-        var sec = new SelectMenuBuilder().WithCustomId("section").WithPlaceholder("Edit section…");
+        if (s.SearchResults.Count > 0)
+        {
+            var pick = new SelectMenuBuilder().WithCustomId("pick").WithPlaceholder("Pick your Pokémon…");
+            foreach (var r in s.SearchResults.Take(25))
+            {
+                var label = r.Name + (r.FormName != null ? $" ({r.FormName})" : "") + (r.Native ? "" : " ⇄HOME");
+                pick.AddOption(label.Length > 100 ? label[..100] : label, $"{r.Id}:{r.Form}");
+            }
+            b.WithSelectMenu(pick, 0);
+        }
+        b.WithButton("🔍 Search Pokémon", "wiz_search", ButtonStyle.Primary, row: 1);
+        b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1);
+        return b.Build();
+    }
+
+    private MessageComponent BuildCustomizeComponents(Session s)
+    {
+        var b = new ComponentBuilder();
+        var sec = new SelectMenuBuilder().WithCustomId("section").WithPlaceholder("More options…");
         foreach (var (id, label) in Sections) sec.AddOption(label, id, isDefault: id == s.Section);
         b.WithSelectMenu(sec, 0);
 
@@ -361,10 +486,9 @@ public sealed class BotRunner
         switch (s.Section)
         {
             case "pokemon":
-                b.WithSelectMenu(GameMenu(s), r++);
                 if (Forms(s).Count > 1) b.WithSelectMenu(FormMenu(s), r++);
                 b.WithSelectMenu(NatureMenu(s), r++);
-                b.WithButton("Set Pokémon / Level", "set_pkm", ButtonStyle.Primary, row: 4);
+                b.WithButton("Level / Change Pokémon", "set_pkm", ButtonStyle.Primary, row: 3);
                 break;
             case "battle":
                 b.WithSelectMenu(AbilityMenu(s), r++);
@@ -374,29 +498,30 @@ public sealed class BotRunner
             case "items":
                 b.WithSelectMenu(BallMenu(s), r++);
                 b.WithSelectMenu(LanguageMenu(s), r++);
-                b.WithButton("Set Held Item", "edit_item", ButtonStyle.Primary, row: 4);
+                b.WithButton("Set Held Item", "edit_item", ButtonStyle.Primary, row: 3);
                 break;
             case "statsmoves":
-                b.WithButton("Edit EVs / IVs", "edit_stats", ButtonStyle.Primary, row: 4);
-                b.WithButton("Edit Moves", "edit_moves", ButtonStyle.Primary, row: 4);
+                b.WithButton("Edit EVs / IVs", "edit_stats", ButtonStyle.Primary, row: 3);
+                b.WithButton("Edit Moves", "edit_moves", ButtonStyle.Primary, row: 3);
                 break;
             case "cosmetic":
-                b.WithButton(s.Shiny ? "✨ Shiny: ON" : "Shiny: OFF", "shiny",
-                    s.Shiny ? ButtonStyle.Success : ButtonStyle.Secondary, disabled: s.Meta is { CanBeShiny: false }, row: 4);
-                b.WithButton(s.Alpha ? "α Alpha: ON" : "Alpha: OFF", "alpha",
-                    s.Alpha ? ButtonStyle.Success : ButtonStyle.Secondary, disabled: s.Meta is not { HasAlpha: true }, row: 4);
-                b.WithButton("Size / Friendship / Date / Nickname", "edit_extras", ButtonStyle.Primary, row: 4);
+                b.WithButton("Size / Friendship / Date / Nickname", "edit_extras", ButtonStyle.Primary, row: 3);
                 break;
             case "trainer":
                 b.WithButton(s.UseCustomOT ? "Custom OT: ON" : "AutoOT", "customot",
-                    s.UseCustomOT ? ButtonStyle.Success : ButtonStyle.Secondary, row: 4);
-                b.WithButton("Edit OT / TID / SID", "edit_trainer", ButtonStyle.Primary, row: 4);
+                    s.UseCustomOT ? ButtonStyle.Success : ButtonStyle.Secondary, row: 3);
+                b.WithButton("Edit OT / TID / SID", "edit_trainer", ButtonStyle.Primary, row: 3);
                 break;
         }
         _ = r;
+        b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 4);
         b.WithButton("⚡ Generate .trade", "generate", ButtonStyle.Success, disabled: s.Species == 0, row: 4);
         return b.Build();
     }
+
+    private static Modal SearchModal() => new ModalBuilder().WithTitle("Search Pokémon").WithCustomId("search_modal")
+        .AddTextInput("Type a name (or part of it)", "q", placeholder: "e.g. char, pika, lucario", required: true)
+        .Build();
 
     private SelectMenuBuilder GameMenu(Session s)
     {
@@ -523,6 +648,8 @@ public sealed class BotRunner
         public string MetDate = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         public string OT = "Trainer", Language = "English", Nickname = "";
         public string Section = "pokemon";
+        public int Step;                       // 0 game, 1 pokemon, 2 shiny, 3 alpha, 4 customize
+        public List<SpeciesInfo> SearchResults = [];
         public List<SpeciesInfo> SpeciesList = [];
         public List<AbilityInfo> AbilityList = [];
         public List<ItemInfo> BallList = [];
