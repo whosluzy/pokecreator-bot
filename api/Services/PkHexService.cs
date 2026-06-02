@@ -46,6 +46,8 @@ public class PkHexService
         GameVersion.GP, GameVersion.GE,                    // Let's Go
     };
 
+    private static readonly GameVersion[] ShinyVersions = [.. TransferVersions, GameVersion.GO];
+
     private readonly GameStrings _strings;
 
     public PkHexService()
@@ -465,10 +467,12 @@ public class PkHexService
         int alphaMaxLevel = alphaEncounters.Count > 0
             ? alphaEncounters.Max(e => (int)e.LevelMax) : 0;
 
-        // canBeShiny = true only if at least one encounter in this game is not shiny-locked.
-        // Count==0 means the species isn't obtainable here at all → not shiny.
-        bool canBeShiny = allEncounters.Count > 0
-            && allEncounters.Any(e => e.Shiny != Shiny.Never);
+        // Shiny is allowed unless the species is shiny-locked in EVERY source game
+        // (incl. GO) — a shiny obtained elsewhere can be HOME-transferred in even if
+        // this game's own encounter is shiny-locked.
+        bool canBeShiny = EncounterMovesetGenerator
+            .GenerateEncounters(pk, ReadOnlyMemory<ushort>.Empty, ShinyVersions)
+            .Any(e => e.Shiny != Shiny.Never);
 
         return new PokemonMeta(validGenders, statSystem, statMax, statTotal, hasTeraType, canBeShiny, hasScale, hasAlpha, minLevel, 100, alphaMinLevel, alphaMaxLevel);
     }
