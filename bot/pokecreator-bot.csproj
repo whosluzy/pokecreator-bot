@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>pokecreator_bot</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Discord.Net" Version="3.19.1" />
+    <PackageReference Include="PKHeX.Core" Version="26.5.5" />
+  </ItemGroup>
+
+  <!-- Reuse the exact same legality logic as the web API (no copies). -->
+  <ItemGroup>
+    <Compile Include="..\api\Models\PokemonModels.cs" Link="Shared\PokemonModels.cs" />
+    <Compile Include="..\api\Services\PkHexService.cs" Link="Shared\PkHexService.cs" />
+  </ItemGroup>
+
+</Project>

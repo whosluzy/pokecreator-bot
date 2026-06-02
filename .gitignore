@@ -1,0 +1,25 @@
+# Build output
+**/bin/
+**/obj/
+dist/
+
+# Next.js / Node
+ui/.next/
+ui/out/
+ui/node_modules/
+ui/next-env.d.ts
+
+# Local secrets & per-machine settings (never commit these)
+**/token.txt
+**/config.json
+
+# Scratch / dev tooling
+inspector/
+inspect.csx
+*.log
+
+# Editor / OS
+*.user
+.vs/
+.DS_Store
+Thumbs.db
