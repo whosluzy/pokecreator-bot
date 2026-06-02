@@ -372,7 +372,9 @@ public sealed class BotRunner
     private string BuildTradeText(Session s)
     {
         if (s.Species == 0) return "Pick a Pokémon first (**Set Pokémon**).";
-        return $"```\n{_svc.ToShowdown(BuildConfig(s))}\n```";
+        var format = _svc.ToShowdown(BuildConfig(s));
+        return $"```\n{format}\n```\n" +
+               $"📋 Copy and paste this format into the **{GameName(s.Game)}** bot channel and click send to request this Pokémon.";
     }
 
     // ───────────────── UI ─────────────────
