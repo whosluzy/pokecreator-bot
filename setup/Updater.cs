@@ -13,7 +13,7 @@ public static class Updater
     public const string AppVersion = "1.0.0";
 
     // Filled in once the repo exists (owner/repo).
-    public const string RepoOwner = "REPLACE_OWNER";
+    public const string RepoOwner = "whosluzy";
     public const string RepoName = "pokecreator-bot";
 
     private static readonly HttpClient Http = CreateClient();
