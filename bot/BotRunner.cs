@@ -223,13 +223,34 @@ public sealed class BotRunner
             case "alpha": if (s.Meta?.HasAlpha == true) s.Alpha = !s.Alpha; break;
             case "customot": s.UseCustomOT = !s.UseCustomOT; break;
             case "generate":
+            {
                 if (s.Species == 0) { await c.RespondAsync("Pick a Pokémon first.", ephemeral: true); return; }
+                await c.DeferAsync(ephemeral: true);
+
+                // Run it through the AutoLegality Mod. Illegal combinations are refused here.
+                var result = _svc.GenerateLegal(BuildConfig(s));
+                if (!result.Ok)
+                {
+                    await c.FollowupAsync($"❌ **Can't create that legally.**\n{result.Report}", ephemeral: true);
+                    return;
+                }
+
                 // Instruction first, then the format ALONE in its own message so it copies cleanly.
-                await c.RespondAsync(
+                await c.FollowupAsync(
                     $"📋 Copy the format below and paste it into the **{GameName(s.Game)}** bot channel, then send it to request this Pokémon:",
                     ephemeral: true);
-                await c.FollowupAsync(BuildTradeText(s), ephemeral: true);
+                await c.FollowupAsync(result.TradeText, ephemeral: true);
+
+                // Also attach the ready-made legal file for direct use.
+                if (result.File is { Length: > 0 } bytes && result.FileName is { } fn)
+                {
+                    using var ms = new MemoryStream(bytes);
+                    await c.FollowupWithFileAsync(ms, fn,
+                        text: "✅ Verified legal. You can also drop this file straight into a trade bot.",
+                        ephemeral: true);
+                }
                 return;
+            }
         }
         await c.UpdateAsync(m => { m.Embed = BuildEmbed(s); m.Components = BuildComponents(s); });
     }

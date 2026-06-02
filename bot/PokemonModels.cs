@@ -66,6 +66,16 @@ public record ValidationResult(bool IsLegal, string Report, List<LegalityIssue> 
 
 public record LegalityIssue(string Field, string Message, string Severity);
 
+// Result of an AutoLegality Mod generation pass. Ok == false means the requested
+// combination cannot legally exist (Report explains why).
+public record LegalGenResult(
+    bool Ok,
+    string TradeText,
+    byte[]? File,
+    string? FileName,
+    string Status,
+    string? Report);
+
 public record GenderOption(int Value, string Name);
 
 public record PokemonMeta(

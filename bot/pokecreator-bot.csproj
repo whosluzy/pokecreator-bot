@@ -13,7 +13,9 @@
     <PackageReference Include="PKHeX.Core" Version="26.5.5" />
   </ItemGroup>
 
-  <!-- The bot is self-contained: it owns PkHexService.cs + PokemonModels.cs and
-       embeds PKHeX.Core directly. It does NOT depend on the web API project. -->
+  <!-- AutoLegality Mod (vendored, GPL) — guarantees generated Pokémon are legal. -->
+  <ItemGroup>
+    <ProjectReference Include="..\PKHeX.Core.AutoMod\PKHeX.Core.AutoMod.csproj" />
+  </ItemGroup>
 
 </Project>

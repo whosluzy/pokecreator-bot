@@ -1,9 +1,21 @@
 using PKHeX.Core;
+using PKHeX.Core.AutoMod;
 
 namespace PokecreatorBot.Data;
 
 public class PkHexService
 {
+    static PkHexService()
+    {
+        // Configure the AutoLegality Mod the same way a SysBot ALM instance is set up,
+        // so anything we generate is guaranteed legal (illegal requests come back Failed).
+        APILegality.ForceLevel100for50 = false; // honor the exact level the user picked (don't bump 50→100)
+        APILegality.AllowTrainerOverride = true; // honor OT:/TID:/SID:/Language: lines when a custom trainer is set
+        APILegality.UseTrainerData = true;       // AutoOT path: receiving bot applies its own trainer on trade
+        APILegality.SetMatchingBalls = true;     // pick a legal ball when none is forced
+        APILegality.AllowBatchCommands = true;   // honor .Scale=, .MetDate=, .OriginalTrainerFriendship=, etc.
+        APILegality.Timeout = 20;
+    }
     private static readonly Dictionary<string, GameVersion> GameMap = new()
     {
         ["SV"]   = GameVersion.SL,
@@ -642,17 +654,38 @@ public class PkHexService
             .ToList();
     }
 
-    public string ToShowdown(PokemonConfig config)
+    // Builds the Showdown + AutoLegality "regen" set text from a config. This is exactly the
+    // text a SysBot ALM instance consumes: standard Showdown lines plus regen extras
+    // (Ball:, Alpha:, OT:, .Scale=, .MetDate=, ...). No ".trade" prefix.
+    private string BuildRegenSetText(PokemonConfig config)
     {
         var pk = BuildPkm(config);
 
-        // Strip PKHeX's own Friendship line — we always emit it in the correct position ourselves
+        // Base Showdown text gives us the correct species/form name, gender tag, item,
+        // ability, level, nature, EVs/IVs, moves and Tera. Strip lines we re-emit ourselves.
         var rawText = ShowdownParsing.GetShowdownText(pk);
-        var baseLines = rawText.Split('\n').Where(l => !l.StartsWith("Friendship:")).ToList();
+        var baseLines = rawText.Split('\n')
+            .Select(l => l.TrimEnd('\r'))
+            .Where(l => !l.StartsWith("Friendship:") && !l.StartsWith("Shiny:"))
+            // Drop a placeholder ability line ("Ability: (None)") when no real ability is chosen —
+            // it isn't a valid Showdown line and makes ALM reject the set. ALM picks a legal ability.
+            .Where(l => !(l.StartsWith("Ability:") && (config.Ability <= 0 || l.Contains("(None)"))))
+            .ToList();
 
         var extra = new List<string>();
 
-        // Scale (dot-prefix PKHeX format) — only SV, ZA, PLA
+        if (config.IsShiny)
+            extra.Add("Shiny: Yes");
+
+        // Caught ball — emit as an ALM regen line so it's factored into encounter selection.
+        if (config.Ball > 0)
+            extra.Add($"Ball: {(Ball)config.Ball}");
+
+        // Alpha (Legends games).
+        if (config.IsAlpha)
+            extra.Add("Alpha: Yes");
+
+        // Scale / size (dot-prefix batch) — only SV, ZA, PLA.
         if (config.Game is "SV" or "ZA" or "PLA")
             extra.Add($".Scale={config.Scale}");
 
@@ -664,14 +697,11 @@ public class PkHexService
 
         // Friendship — only when the user explicitly set it.
         if (config.FriendshipSet)
-        {
-            extra.Add($"Friendship: {config.Friendship}");
             extra.Add($".OriginalTrainerFriendship={config.Friendship}");
-        }
 
         // Dynamax Level — only when the user explicitly set it (Sword/Shield).
         if (config.DynamaxSet)
-            extra.Add($"Dynamax Level: {config.DynamaxLevel}");
+            extra.Add($".DynamaxLevel={config.DynamaxLevel}");
 
         // Trainer info — only when the user opts into a custom trainer.
         // Otherwise AutoOT applies the receiving trainer's OT/TID/SID on trade.
@@ -685,50 +715,110 @@ public class PkHexService
                 extra.Add($"Language: {config.Language}");
         }
 
-        return ".trade " + string.Join("\n", baseLines).TrimEnd() + "\n" + string.Join("\n", extra);
+        var text = string.Join("\n", baseLines).TrimEnd();
+        if (extra.Count > 0)
+            text += "\n" + string.Join("\n", extra);
+        return text;
     }
 
-    public ValidationResult Validate(PokemonConfig config)
+    private ITrainerInfo MakeTrainer(PokemonConfig config, GameVersion version)
     {
-        var pk = BuildPkm(config);
-        var la = new LegalityAnalysis(pk);
-
-        bool isLegal = la.Results.All(r => r.Valid);
-        string report = la.ToString() ?? "";
-
-        var issues = la.Results
-            .Where(r => !r.Valid)
-            .Select(r => new LegalityIssue(
-                r.Identifier.ToString(),
-                r.Result.ToString(),
-                r.Judgement.ToString()
-            ))
-            .ToList();
-
-        return new ValidationResult(isLegal, report, issues);
+        int lang = config.Language switch
+        {
+            "Japanese" => 1, "English" => 2, "French" => 3, "Italian" => 4,
+            "German" => 5, "Spanish" => 7, "Korean" => 8, _ => 2,
+        };
+        return new SimpleTrainerInfo(version)
+        {
+            OT = string.IsNullOrWhiteSpace(config.OT) ? "PKHeX" : config.OT,
+            TID16 = (ushort)config.TID,
+            SID16 = (ushort)config.SID,
+            Language = (byte)lang,
+        };
     }
 
-    public (byte[] Data, string FileName) Generate(PokemonConfig config)
+    // Runs the request through the AutoLegality Mod. Returns the guaranteed-legal result, or
+    // a failure (Ok == false) describing why the requested combination cannot legally exist.
+    public LegalGenResult GenerateLegal(PokemonConfig config)
     {
-        var pk = BuildPkm(config);
+        if (!GameMap.TryGetValue(config.Game, out var version))
+            return new LegalGenResult(false, "", null, null, "UnknownGame",
+                $"Unknown game: {config.Game}");
+
+        string setText = BuildRegenSetText(config);
+        ITrainerInfo tr = MakeTrainer(config, version);
+
+        APILegality.AsyncLegalizationResult res;
+        try
+        {
+            var set = new RegenTemplate(new ShowdownSet(setText));
+            res = tr.GetLegalFromSet(set);
+        }
+        catch (Exception ex)
+        {
+            return new LegalGenResult(false, "", null, null, "Error", ex.Message);
+        }
+
+        if (res.Status != LegalizationResult.Regenerated)
+        {
+            string why = res.Status switch
+            {
+                LegalizationResult.Failed =>
+                    "This exact combination can't legally exist. Try adjusting level, ability, ball, shiny or moves.",
+                LegalizationResult.Timeout =>
+                    "Took too long to legalize — try again or simplify the request.",
+                LegalizationResult.VersionMismatch =>
+                    "Legalizer version mismatch.",
+                _ => res.Status.ToString(),
+            };
+            return new LegalGenResult(false, "", null, null, res.Status.ToString(), why);
+        }
+
+        var pk = res.Created;
         pk.RefreshChecksum();
+
+        // Verify the produced entity actually passes legality (belt-and-suspenders).
+        var la = new LegalityAnalysis(pk);
+        if (!la.Valid)
+            return new LegalGenResult(false, "", null, null, "Invalid",
+                "Generated Pokémon failed a legality check and was rejected.");
+
+        string trade = ".trade " + setText.TrimStart();
 
         var ext = pk switch
         {
-            PK9 => ".pk9",
-            PA9 => ".pa9",
-            PK8 => ".pk8",
-            PA8 => ".pa8",
-            PB8 => ".pb8",
-            PB7 => ".pb7",
-            _ => ".pkm"
+            PK9 => ".pk9", PA9 => ".pa9", PK8 => ".pk8",
+            PA8 => ".pa8", PB8 => ".pb8", PB7 => ".pb7", _ => ".pkm",
         };
-
         var name = string.IsNullOrWhiteSpace(config.Nickname)
             ? _strings.Species[config.Species]
             : config.Nickname;
 
-        return (pk.Data.ToArray(), $"{name}{ext}");
+        return new LegalGenResult(true, trade, pk.Data.ToArray(), $"{name}{ext}",
+            "Regenerated", null);
+    }
+
+    // Preview text (also ALM-gated): returns the legal .trade text, or an error string.
+    public string ToShowdown(PokemonConfig config)
+    {
+        var r = GenerateLegal(config);
+        return r.Ok ? r.TradeText : "❌ " + r.Report;
+    }
+
+    public ValidationResult Validate(PokemonConfig config)
+    {
+        var r = GenerateLegal(config);
+        return new ValidationResult(r.Ok, r.Report ?? "", r.Ok
+            ? new List<LegalityIssue>()
+            : new List<LegalityIssue> { new("Legality", r.Report ?? r.Status, r.Status) });
+    }
+
+    public (byte[] Data, string FileName) Generate(PokemonConfig config)
+    {
+        var r = GenerateLegal(config);
+        if (!r.Ok)
+            throw new InvalidOperationException(r.Report ?? r.Status);
+        return (r.File!, r.FileName!);
     }
 
     private PKM BuildPkm(PokemonConfig config)
