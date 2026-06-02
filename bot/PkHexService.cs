@@ -620,16 +620,22 @@ public class PkHexService
         if (config.Game is "SV" or "ZA" or "PLA")
             extra.Add($".Scale={config.Scale}");
 
-        // Met date in YYYYMMDD format (no dashes)
-        if (!string.IsNullOrWhiteSpace(config.MetDate)
+        // Met date — only when the user explicitly set it.
+        if (config.MetDateSet
+            && !string.IsNullOrWhiteSpace(config.MetDate)
             && DateOnly.TryParse(config.MetDate, out var d))
             extra.Add($".MetDate={d:yyyyMMdd}");
 
-        // Standard Showdown friendship field
-        extra.Add($"Friendship: {config.Friendship}");
+        // Friendship — only when the user explicitly set it.
+        if (config.FriendshipSet)
+        {
+            extra.Add($"Friendship: {config.Friendship}");
+            extra.Add($".OriginalTrainerFriendship={config.Friendship}");
+        }
 
-        // PKHeX dot-prefix OT friendship
-        extra.Add($".OriginalTrainerFriendship={config.Friendship}");
+        // Dynamax Level — only when the user explicitly set it (Sword/Shield).
+        if (config.DynamaxSet)
+            extra.Add($"Dynamax Level: {config.DynamaxLevel}");
 
         // Trainer info — only when the user opts into a custom trainer.
         // Otherwise AutoOT applies the receiving trainer's OT/TID/SID on trade.
@@ -782,6 +788,8 @@ public class PkHexService
             if (config.IsAlpha)
                 pa8.RibbonMarkAlpha = true;
         }
+        if (config.DynamaxSet && pk is PK8 pk8)
+            pk8.DynamaxLevel = (byte)Math.Clamp(config.DynamaxLevel, 0, 10);
 
         // Met date
         if (!string.IsNullOrWhiteSpace(config.MetDate)

@@ -46,9 +46,13 @@ public record PokemonConfig
     public int[] EVs { get; init; } = new int[6];
     public int[] IVs { get; init; } = [31, 31, 31, 31, 31, 31];
     public int Friendship { get; init; } = 255;
+    public bool FriendshipSet { get; init; } = false;
     public int Scale { get; init; } = 128;
     public bool IsAlpha { get; init; } = false;
     public string MetDate { get; init; } = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
+    public bool MetDateSet { get; init; } = false;
+    public int DynamaxLevel { get; init; } = 0;
+    public bool DynamaxSet { get; init; } = false;
     public bool UseCustomOT { get; init; } = false;
     public string OT { get; init; } = "Trainer";
     public int TID { get; init; }

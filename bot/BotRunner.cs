@@ -295,9 +295,11 @@ public sealed class BotRunner
                 break;
             case "extras_modal":
                 s.Nickname = Val("nick");
-                if (int.TryParse(Val("friend"), out var fr)) s.Friendship = Math.Clamp(fr, 0, 255);
                 if (int.TryParse(Val("scale"), out var sc)) s.Scale = Math.Clamp(sc, 0, 255);
-                if (DateOnly.TryParse(Val("met"), out var d)) s.MetDate = d.ToString("yyyy-MM-dd");
+                // These three are only "set" when the user actually enters a value.
+                if (int.TryParse(Val("friend"), out var fr)) { s.Friendship = Math.Clamp(fr, 0, 255); s.FriendshipSet = true; }
+                if (DateOnly.TryParse(Val("met"), out var d)) { s.MetDate = d.ToString("yyyy-MM-dd"); s.MetDateSet = true; }
+                if (int.TryParse(Val("dmax"), out var dm)) { s.DynamaxLevel = Math.Clamp(dm, 0, 10); s.DynamaxSet = true; }
                 break;
             case "trainer_modal":
                 s.OT = Val("ot"); s.UseCustomOT = true;
@@ -411,7 +413,9 @@ public sealed class BotRunner
         IsShiny = s.Shiny, IsAlpha = s.Alpha, Gender = s.Gender, Nature = s.Nature,
         Ability = s.Ability, HeldItem = s.HeldItem, Ball = s.Ball,
         Moves = (int[])s.Moves.Clone(), EVs = (int[])s.EVs.Clone(), IVs = (int[])s.IVs.Clone(),
-        Friendship = s.Friendship, Scale = s.Scale, MetDate = s.MetDate,
+        Friendship = s.Friendship, FriendshipSet = s.FriendshipSet,
+        Scale = s.Scale, MetDate = s.MetDate, MetDateSet = s.MetDateSet,
+        DynamaxLevel = s.DynamaxLevel, DynamaxSet = s.DynamaxSet,
         UseCustomOT = s.UseCustomOT, OT = s.OT, TID = s.TID, SID = s.SID,
         Language = s.Language, Nickname = s.Nickname, TeraType = s.TeraType,
     };
@@ -709,10 +713,17 @@ public sealed class BotRunner
 
     private static Modal ExtrasModal(Session s)
     {
+        // Friendship / Met Date / Dynamax are left BLANK on purpose — they are only
+        // added to the output if the user actually fills them in.
         var b = new ModalBuilder().WithTitle("Extras").WithCustomId("extras_modal")
             .AddTextInput("Nickname (blank = species name)", "nick", required: false, value: s.Nickname)
-            .AddTextInput("Friendship (0-255)", "friend", required: false, value: s.Friendship.ToString())
-            .AddTextInput("Met Date (YYYY-MM-DD)", "met", required: false, value: s.MetDate);
+            .AddTextInput("Friendship (blank = leave default)", "friend", required: false,
+                value: s.FriendshipSet ? s.Friendship.ToString() : "", placeholder: "0-255")
+            .AddTextInput("Met Date (blank = leave default)", "met", required: false,
+                value: s.MetDateSet ? s.MetDate : "", placeholder: "YYYY-MM-DD");
+        if (s.Game == "SWSH")
+            b.AddTextInput("Dynamax Level (blank = leave default)", "dmax", required: false,
+                value: s.DynamaxSet ? s.DynamaxLevel.ToString() : "", placeholder: "0-10");
         if (s.Meta?.HasScale == true)
             b.AddTextInput("Size / Scale (0-255)", "scale", required: false, value: s.Scale.ToString());
         return b.Build();
@@ -750,6 +761,8 @@ public sealed class BotRunner
         public int[] EVs = new int[6];
         public int[] IVs = [31, 31, 31, 31, 31, 31];
         public int Friendship = 255, Scale = 128, TID, SID;
+        public bool FriendshipSet, MetDateSet, DynamaxSet;
+        public int DynamaxLevel;
         public string MetDate = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         public string OT = "Trainer", Language = "English", Nickname = "";
         public string Section = "pokemon";
