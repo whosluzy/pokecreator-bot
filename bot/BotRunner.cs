@@ -477,7 +477,7 @@ public sealed class BotRunner
             .AddField("Nature", NatureName(s.Nature), true)
             .AddField("Ability", AbilityName(s, s.Ability), true)
             .AddField("Gender", GenderName(s.Gender), true)
-            .AddField("Ball", BallName(s, s.Ball), true)
+            .AddField("Ball Caught", BallName(s, s.Ball), true)
             .AddField("Held Item", s.HeldItem == 0 ? "None" : ItemName(s, s.HeldItem), true)
             .AddField(statLabel + "s", FormatStats(s.EVs), true)
             .AddField("IVs", FormatStats(s.IVs), true)
@@ -524,17 +524,19 @@ public sealed class BotRunner
     private MessageComponent BuildPokemonStep(Session s)
     {
         var b = new ComponentBuilder();
-        if (s.SearchResults.Count > 0)
+        // Always show a list. Default to the first 25 (A–Z); search narrows it.
+        var list = s.SearchResults.Count > 0 ? s.SearchResults : s.SpeciesList;
+        if (list.Count > 0)
         {
             var pick = new SelectMenuBuilder().WithCustomId("pick").WithPlaceholder("Pick your Pokémon…");
-            foreach (var r in s.SearchResults.Take(25))
+            foreach (var r in list.OrderBy(x => x.Name).Take(25))
             {
                 var label = r.Name + (r.FormName != null ? $" ({r.FormName})" : "") + (r.Native ? "" : " ⇄HOME");
                 pick.AddOption(label.Length > 100 ? label[..100] : label, $"{r.Id}:{r.Form}");
             }
             b.WithSelectMenu(pick, 0);
         }
-        b.WithButton("🔍 Search Pokémon", "wiz_search", ButtonStyle.Primary, row: 1);
+        b.WithButton("🔍 Search by name", "wiz_search", ButtonStyle.Primary, row: 1);
         b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1);
         return b.Build();
     }
@@ -563,8 +565,8 @@ public sealed class BotRunner
             case "items":
                 b.WithSelectMenu(BallMenu(s), r++);
                 b.WithSelectMenu(LanguageMenu(s), r++);
-                if (s.ItemResults.Count > 0) b.WithSelectMenu(ItemPickMenu(s), r++);
-                b.WithButton("🔍 Search Held Item", "item_search", ButtonStyle.Primary, row: 3);
+                b.WithSelectMenu(ItemPickMenu(s), r++);   // always shows a list (first 25 A–Z; search narrows)
+                b.WithButton("🔍 Search held item", "item_search", ButtonStyle.Primary, row: 3);
                 b.WithButton("Clear (None)", "item_clear", ButtonStyle.Secondary, row: 3);
                 break;
             case "statsmoves":
@@ -610,9 +612,11 @@ public sealed class BotRunner
 
     private SelectMenuBuilder ItemPickMenu(Session s)
     {
+        // Default to the first 24 items (A–Z); a search replaces them with matches.
+        var list = s.ItemResults.Count > 0 ? s.ItemResults : Items(s.Game);
         var m = new SelectMenuBuilder().WithCustomId("item_pick").WithPlaceholder("Pick held item…");
         m.AddOption("— None —", "0");
-        foreach (var it in s.ItemResults.Take(24))
+        foreach (var it in list.OrderBy(x => x.Name).Take(24))
             m.AddOption(it.Name.Length > 100 ? it.Name[..100] : it.Name, it.Id.ToString());
         return m;
     }
@@ -682,7 +686,7 @@ public sealed class BotRunner
     }
     private static SelectMenuBuilder BallMenu(Session s)
     {
-        var m = new SelectMenuBuilder().WithCustomId("ball").WithPlaceholder("Ball");
+        var m = new SelectMenuBuilder().WithCustomId("ball").WithPlaceholder("Ball Caught:");
         if (s.BallList.Count == 0) m.AddOption("Poké Ball", "4", isDefault: true);
         foreach (var ball in s.BallList.Take(25)) m.AddOption(ball.Name, ball.Id.ToString(), isDefault: ball.Id == s.Ball);
         return m;
