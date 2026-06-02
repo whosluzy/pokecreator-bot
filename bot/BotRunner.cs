@@ -146,6 +146,7 @@ public sealed class BotRunner
                 break;
             }
             case "form": s.Form = int.Parse(v); ApplyMeta(s); RefreshLists(s); break;
+            case "level": s.Level = int.Parse(v); break;
             case "nature": s.Nature = int.Parse(v); break;
             case "ability": s.Ability = int.Parse(v); break;
             case "gender": s.Gender = int.Parse(v); break;
@@ -490,7 +491,8 @@ public sealed class BotRunner
             case "pokemon":
                 if (Forms(s).Count > 1) b.WithSelectMenu(FormMenu(s), r++);
                 b.WithSelectMenu(NatureMenu(s), r++);
-                b.WithButton("Level / Change Pokémon", "set_pkm", ButtonStyle.Primary, row: 3);
+                b.WithSelectMenu(LevelMenu(s), r++);
+                b.WithButton("Change Pokémon", "set_pkm", ButtonStyle.Secondary, row: 4);
                 break;
             case "battle":
                 b.WithSelectMenu(AbilityMenu(s), r++);
@@ -531,6 +533,23 @@ public sealed class BotRunner
         foreach (var g in _svc.GetGames()) m.AddOption(g.Name, g.Id, isDefault: g.Id == s.Game);
         return m;
     }
+    private static SelectMenuBuilder LevelMenu(Session s)
+    {
+        // Minimum legal level (alpha shifts it); then a 5-step ladder up to 100.
+        int min = s.Alpha && s.Meta?.AlphaMinLevel > 0 ? s.Meta.AlphaMinLevel
+                : s.Meta?.MinLevel > 0 ? s.Meta.MinLevel : 1;
+
+        var levels = new List<int> { min };
+        for (int l = (min / 5 + 1) * 5; l <= 100; l += 5) levels.Add(l);
+        if (!levels.Contains(100)) levels.Add(100);
+        if (!levels.Contains(s.Level) && s.Level >= min) levels.Add(s.Level);
+        levels = levels.Where(l => l >= min && l <= 100).Distinct().OrderBy(x => x).Take(25).ToList();
+
+        var m = new SelectMenuBuilder().WithCustomId("level").WithPlaceholder($"Level (min {min})");
+        foreach (var l in levels) m.AddOption($"Level {l}", l.ToString(), isDefault: l == s.Level);
+        return m;
+    }
+
     private SelectMenuBuilder NatureMenu(Session s)
     {
         var m = new SelectMenuBuilder().WithCustomId("nature").WithPlaceholder("Nature");
