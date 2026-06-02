@@ -13,10 +13,7 @@
     <PackageReference Include="PKHeX.Core" Version="26.5.5" />
   </ItemGroup>
 
-  <!-- Reuse the exact same legality logic as the web API (no copies). -->
-  <ItemGroup>
-    <Compile Include="..\api\Models\PokemonModels.cs" Link="Shared\PokemonModels.cs" />
-    <Compile Include="..\api\Services\PkHexService.cs" Link="Shared\PkHexService.cs" />
-  </ItemGroup>
+  <!-- The bot is self-contained: it owns PkHexService.cs + PokemonModels.cs and
+       embeds PKHeX.Core directly. It does NOT depend on the web API project. -->
 
 </Project>

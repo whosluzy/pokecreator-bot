@@ -1,8 +1,7 @@
 using System.Collections.Concurrent;
 using Discord;
 using Discord.WebSocket;
-using PokecreatorApi.Models;
-using PokecreatorApi.Services;
+using PokecreatorBot.Data;
 
 namespace PokecreatorBot;
 
@@ -153,6 +152,14 @@ public sealed class BotRunner
             case "ball": s.Ball = int.Parse(v); break;
             case "tera": s.TeraType = int.Parse(v); break;
             case "language": s.Language = v; break;
+            case "move_pick":
+                if (s.MoveSlot is >= 0 and < 4) s.Moves[s.MoveSlot] = int.Parse(v);
+                s.MoveResults = [];
+                break;
+            case "item_pick":
+                s.HeldItem = int.Parse(v);
+                s.ItemResults = [];
+                break;
         }
         await c.UpdateAsync(m => { m.Embed = BuildEmbed(s); m.Components = BuildComponents(s); });
     }
@@ -192,8 +199,16 @@ public sealed class BotRunner
             // ── customize controls ──
             case "set_pkm": await c.RespondWithModalAsync(PkmModal(s)); return;
             case "edit_stats": await c.RespondWithModalAsync(StatsModal(s)); return;
-            case "edit_moves": await c.RespondWithModalAsync(MovesModal(s)); return;
-            case "edit_item": await c.RespondWithModalAsync(ItemModal(s)); return;
+            case "m0": case "m1": case "m2": case "m3":
+                s.MoveSlot = c.Data.CustomId[1] - '0';
+                s.MoveResults = [];
+                await c.RespondWithModalAsync(SearchModalFor("move_search", $"Search move for slot {s.MoveSlot + 1}"));
+                return;
+            case "item_search":
+                s.ItemResults = [];
+                await c.RespondWithModalAsync(SearchModalFor("item_search", "Search held item"));
+                return;
+            case "item_clear": s.HeldItem = 0; s.ItemResults = []; break;
             case "edit_extras": await c.RespondWithModalAsync(ExtrasModal(s)); return;
             case "edit_trainer": await c.RespondWithModalAsync(TrainerModal(s)); return;
             case "shiny": if (s.Meta?.CanBeShiny == true) s.Shiny = !s.Shiny; break;
@@ -232,6 +247,28 @@ public sealed class BotRunner
                     s.Species = pick.Id; s.SpeciesName = pick.Name; s.Form = pick.Form;
                     ApplyMeta(s); RefreshLists(s);
                     s.Step = NextAfterPokemon(s);
+                }
+                break;
+            }
+            case "move_search":
+            {
+                var q = Val("q").ToLowerInvariant();
+                s.MoveResults = s.MoveList.Where(x => x.Name.ToLowerInvariant().Contains(q)).Take(25).ToList();
+                if (s.MoveResults.Count == 1 && s.MoveSlot is >= 0 and < 4)
+                {
+                    s.Moves[s.MoveSlot] = s.MoveResults[0].Id;
+                    s.MoveResults = [];
+                }
+                break;
+            }
+            case "item_search":
+            {
+                var q = Val("q").ToLowerInvariant();
+                s.ItemResults = Items(s.Game).Where(x => x.Name.ToLowerInvariant().Contains(q)).Take(25).ToList();
+                if (s.ItemResults.Count == 1)
+                {
+                    s.HeldItem = s.ItemResults[0].Id;
+                    s.ItemResults = [];
                 }
                 break;
             }
@@ -504,11 +541,17 @@ public sealed class BotRunner
             case "items":
                 b.WithSelectMenu(BallMenu(s), r++);
                 b.WithSelectMenu(LanguageMenu(s), r++);
-                b.WithButton("Set Held Item", "edit_item", ButtonStyle.Primary, row: 3);
+                if (s.ItemResults.Count > 0) b.WithSelectMenu(ItemPickMenu(s), r++);
+                b.WithButton("🔍 Search Held Item", "item_search", ButtonStyle.Primary, row: 3);
+                b.WithButton("Clear (None)", "item_clear", ButtonStyle.Secondary, row: 3);
                 break;
             case "statsmoves":
-                b.WithButton("Edit EVs / IVs", "edit_stats", ButtonStyle.Primary, row: 3);
-                b.WithButton("Edit Moves", "edit_moves", ButtonStyle.Primary, row: 3);
+                if (s.MoveResults.Count > 0) b.WithSelectMenu(MovePickMenu(s), r++);
+                b.WithButton("EVs / IVs", "edit_stats", ButtonStyle.Primary, row: 3);
+                b.WithButton("Move 1", "m0", ButtonStyle.Secondary, row: 3);
+                b.WithButton("Move 2", "m1", ButtonStyle.Secondary, row: 3);
+                b.WithButton("Move 3", "m2", ButtonStyle.Secondary, row: 3);
+                b.WithButton("Move 4", "m3", ButtonStyle.Secondary, row: 3);
                 break;
             case "cosmetic":
                 b.WithButton("Size / Friendship / Date / Nickname", "edit_extras", ButtonStyle.Primary, row: 3);
@@ -528,6 +571,29 @@ public sealed class BotRunner
     private static Modal SearchModal() => new ModalBuilder().WithTitle("Search Pokémon").WithCustomId("search_modal")
         .AddTextInput("Type a name (or part of it)", "q", placeholder: "e.g. char, pika, lucario", required: true)
         .Build();
+
+    private static Modal SearchModalFor(string id, string title) => new ModalBuilder()
+        .WithTitle(title.Length > 45 ? title[..45] : title).WithCustomId(id)
+        .AddTextInput("Type a name (or part of it)", "q", placeholder: "start typing…", required: true)
+        .Build();
+
+    private SelectMenuBuilder MovePickMenu(Session s)
+    {
+        var m = new SelectMenuBuilder().WithCustomId("move_pick").WithPlaceholder($"Pick move for slot {s.MoveSlot + 1}…");
+        m.AddOption("— None —", "0");
+        foreach (var mv in s.MoveResults.Take(24))
+            m.AddOption(mv.Name.Length > 100 ? mv.Name[..100] : mv.Name, mv.Id.ToString());
+        return m;
+    }
+
+    private SelectMenuBuilder ItemPickMenu(Session s)
+    {
+        var m = new SelectMenuBuilder().WithCustomId("item_pick").WithPlaceholder("Pick held item…");
+        m.AddOption("— None —", "0");
+        foreach (var it in s.ItemResults.Take(24))
+            m.AddOption(it.Name.Length > 100 ? it.Name[..100] : it.Name, it.Id.ToString());
+        return m;
+    }
 
     private SelectMenuBuilder GameMenu(Session s)
     {
@@ -613,17 +679,6 @@ public sealed class BotRunner
         .AddTextInput("IVs — HP/Atk/Def/SpA/SpD/Spe", "ivs", placeholder: "31/31/31/31/31/31", required: false, value: string.Join("/", s.IVs))
         .Build();
 
-    private Modal MovesModal(Session s)
-    {
-        var b = new ModalBuilder().WithTitle("Moves (type names)").WithCustomId("moves_modal");
-        for (int i = 0; i < 4; i++)
-            b.AddTextInput($"Move {i + 1}", $"m{i}", required: false, value: s.Moves[i] > 0 ? MoveName(s, s.Moves[i]) : "");
-        return b.Build();
-    }
-
-    private Modal ItemModal(Session s) => new ModalBuilder().WithTitle("Held Item").WithCustomId("item_modal")
-        .AddTextInput("Item name (blank or 'none' = none)", "item", required: false, value: s.HeldItem == 0 ? "" : ItemName(s, s.HeldItem))
-        .Build();
 
     private static Modal ExtrasModal(Session s)
     {
@@ -673,6 +728,9 @@ public sealed class BotRunner
         public string Section = "pokemon";
         public int Step;                       // 0 game, 1 pokemon, 2 shiny, 3 alpha, 4 customize
         public List<SpeciesInfo> SearchResults = [];
+        public int MoveSlot;                   // which move slot (0-3) the search targets
+        public List<MoveEntry> MoveResults = [];
+        public List<ItemInfo> ItemResults = [];
         public List<SpeciesInfo> SpeciesList = [];
         public List<AbilityInfo> AbilityList = [];
         public List<ItemInfo> BallList = [];

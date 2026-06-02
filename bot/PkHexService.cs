@@ -1,7 +1,6 @@
 using PKHeX.Core;
-using PokecreatorApi.Models;
 
-namespace PokecreatorApi.Services;
+namespace PokecreatorBot.Data;
 
 public class PkHexService
 {
@@ -113,11 +112,15 @@ public class PkHexService
                         fname.Contains("Hisui", StringComparison.OrdinalIgnoreCase) ||
                         fname.Contains("Paldea", StringComparison.OrdinalIgnoreCase);
 
-                    bool special =
-                        fname.Contains("Mega", StringComparison.OrdinalIgnoreCase) ||
-                        fname.Contains("Primal", StringComparison.OrdinalIgnoreCase) ||
-                        fname.Contains("Gigantamax", StringComparison.OrdinalIgnoreCase) ||
-                        fname.Contains("Eternamax", StringComparison.OrdinalIgnoreCase);
+                    // Battle-only / transient / event-costume forms — never selectable here.
+                    string[] blocked =
+                    [
+                        "Mega", "Primal", "Gigantamax", "Eternamax", "Busted", "Gorging",
+                        "Gulping", "Hangry", "Noice", "Crowned", "Ash", "Eternal", "Bond",
+                        "Original", "Hoenn", "Sinnoh", "Unova", "Kalos", "World", "Partner",
+                        "Starter", "Cosplay", "Cap",
+                    ];
+                    bool special = blocked.Any(x => fname.Contains(x, StringComparison.OrdinalIgnoreCase));
 
                     var pif = personal.GetFormEntry((ushort)i, f);
                     bool isCosmetic =
