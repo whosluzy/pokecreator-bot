@@ -75,6 +75,18 @@ public class PkHexService
 
     private readonly Dictionary<string, List<SpeciesInfo>> _speciesCache = new();
 
+    // Whether a specific form can exist in the game this PersonalInfo came from.
+    // Gen8/Gen9 tables carry a reliable per-form IsPresentInGame flag; BDSP/LGPE don't,
+    // so for those we don't second-guess the form here (other filters handle them).
+    private static bool IsFormPresent(object pi) => pi switch
+    {
+        PersonalInfo9SV   sv9 => sv9.IsPresentInGame,
+        PersonalInfo9ZA   za9 => za9.IsPresentInGame,
+        PersonalInfo8SWSH sw8 => sw8.IsPresentInGame,
+        PersonalInfo8LA   la8 => la8.IsPresentInGame,
+        _ => true,
+    };
+
     public List<SpeciesInfo> GetAllSpecies(string game)
     {
         if (_speciesCache.TryGetValue(game, out var cached))
@@ -116,6 +128,12 @@ public class PkHexService
 
             for (byte f = 0; f < formCount; f++)
             {
+                // Per-form presence gate. For Gen8/Gen9 games IsPresentInGame is reliable per
+                // form — it's what excludes forms that can't exist in this game even via HOME
+                // (e.g. the hat/cap Pikachus in Legends: Z-A). Base form (0) was already gated.
+                if (f > 0 && !IsFormPresent(personal.GetFormEntry((ushort)i, f)))
+                    continue;
+
                 // Only show: regional forms (Alola / Galar / Hisui / Paldea) and
                 // cosmetic colour/pattern variants. Every other form (Therian,
                 // Deoxys, Rotom appliances, Mega/Gigantamax, Zen, fusions, …) is an
