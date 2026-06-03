@@ -31,7 +31,7 @@ public sealed class BotRunner
 
     private static readonly (string, string)[] Sections =
     [
-        ("pokemon", "🔹 Nature / Form"),
+        ("pokemon", "🔹 Form / Change Pokémon"),
         ("battle", "⚔️ Ability / Gender / Tera"),
         ("statsmoves", "📊 EVs / IVs / Moves"),
         ("cosmetic", "✨ Size / Friendship / Date / Nickname"),
@@ -187,7 +187,7 @@ public sealed class BotRunner
             case "wiz_search": await c.RespondWithModalAsync(SearchModal()); return;
             case "wiz_back": s.Step = PrevStep(s); break;
             case "wiz_next": s.Step = NextStep(s); break;
-            case "open_extras": s.Section = "pokemon"; s.Step = 8; break;
+            case "open_extras": s.Section = "pokemon"; s.Step = 9; break;
 
             // ── Pokémon list paging ──
             case "pg_prev": s.Page--; break;
@@ -392,20 +392,22 @@ public sealed class BotRunner
     // Always visit the shiny step — it shows Yes/No, or a "no shiny version" notice.
     private static int NextAfterPokemon(Session s) => 2;
     private static int NextAfterShiny(Session s) => AlphaApplicable(s) ? 3 : 4;
-    // Forward "Next ▶" through the guided level → item → ball → finalize steps.
+    // Forward "Next ▶" through the guided level → nature → item → ball → finalize steps.
     private static int NextStep(Session s) => s.Step switch
     {
-        4 => 5,   // level → held item
-        5 => 6,   // held item → ball
-        6 => 7,   // ball → finalize
+        4 => 5,   // level → nature
+        5 => 6,   // nature → held item
+        6 => 7,   // held item → ball
+        7 => 8,   // ball → finalize
         _ => s.Step,
     };
     private static int PrevStep(Session s) => s.Step switch
     {
-        8 => 7,   // extras → finalize
-        7 => 6,   // finalize → ball
-        6 => 5,   // ball → held item
-        5 => 4,   // held item → level
+        9 => 8,   // extras → finalize
+        8 => 7,   // finalize → ball
+        7 => 6,   // ball → held item
+        6 => 5,   // held item → nature
+        5 => 4,   // nature → level
         4 => AlphaApplicable(s) ? 3 : 2,   // level → alpha (if any) else shiny
         3 => 2,
         2 => 1,
@@ -487,7 +489,7 @@ public sealed class BotRunner
         var chosen = s.Species == 0 ? "—" : $"{s.SpeciesName}{formTxt}";
 
         // Guided steps get a focused embed.
-        if (s.Step <= 6)
+        if (s.Step <= 7)
         {
             var eb2 = new EmbedBuilder().WithColor(new Color(0x7c, 0x3a, 0xed));
             switch (s.Step)
@@ -525,11 +527,15 @@ public sealed class BotRunner
                     break;
                 }
                 case 5:
-                    eb2.WithTitle("Step 6 · Held Item")
-                       .WithDescription($"Give **{chosen}** a held item (optional).\nCurrent: **{(s.HeldItem == 0 ? "None" : ItemName(s, s.HeldItem))}**\n\nBrowse or 🔍 search, or just press **Next ▶** to skip.");
+                    eb2.WithTitle("Step 6 · Nature")
+                       .WithDescription($"Pick a **Nature** for **{chosen}**.\nCurrent: **{NatureName(s.Nature)}**\n\nThen press **Next ▶**.");
                     break;
                 case 6:
-                    eb2.WithTitle("Step 7 · Ball Caught In")
+                    eb2.WithTitle("Step 7 · Held Item")
+                       .WithDescription($"Give **{chosen}** a held item (optional).\nCurrent: **{(s.HeldItem == 0 ? "None" : ItemName(s, s.HeldItem))}**\n\nBrowse or 🔍 search, or just press **Next ▶** to skip.");
+                    break;
+                case 7:
+                    eb2.WithTitle("Step 8 · Ball Caught In")
                        .WithDescription($"Which Ball was **{chosen}** caught in?\nCurrent: **{BallName(s, s.Ball)}**\n\nThen press **Next ▶**.");
                     break;
             }
@@ -562,8 +568,8 @@ public sealed class BotRunner
 
         if (s.Meta?.HasTeraType == true) eb.AddField("Tera", TeraTypes.ElementAtOrDefault(s.TeraType) ?? "—", true);
         if (s.Meta?.HasScale == true) eb.AddField("Size", $"{s.Scale}", true);
-        eb.WithTitle(s.Step == 8 ? $"✨ Extras — {chosen}" : $"✅ Ready — {chosen}");
-        eb.WithFooter(s.Step == 8
+        eb.WithTitle(s.Step == 9 ? $"✨ Extras — {chosen}" : $"✅ Ready — {chosen}");
+        eb.WithFooter(s.Step == 9
             ? "Adjust anything optional, then ◀ Back to finish."
             : "Everything required is set. Press ✨ Extras to fine-tune, or ⚡ Get Bot Ready Format.");
         return eb.Build();
@@ -580,10 +586,11 @@ public sealed class BotRunner
                 .WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1)
                 .Build(),
         4 => BuildLevelStep(s),
-        5 => BuildItemStep(s),
-        6 => BuildBallStep(s),
-        7 => BuildFinalizeStep(s),
-        _ => BuildCustomizeComponents(s),   // 8 = Extras (everything else)
+        5 => BuildNatureStep(s),
+        6 => BuildItemStep(s),
+        7 => BuildBallStep(s),
+        8 => BuildFinalizeStep(s),
+        _ => BuildCustomizeComponents(s),   // 9 = Extras (everything else)
     };
 
     private static MessageComponent BuildShinyStep(Session s)
@@ -614,7 +621,17 @@ public sealed class BotRunner
         return b.Build();
     }
 
-    // Step 6 — Held item (optional; paged + searchable list).
+    // Step 6 — Nature.
+    private MessageComponent BuildNatureStep(Session s)
+    {
+        var b = new ComponentBuilder();
+        b.WithSelectMenu(NatureMenu(s), 0);
+        b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1);
+        b.WithButton("Next ▶", "wiz_next", ButtonStyle.Primary, row: 1);
+        return b.Build();
+    }
+
+    // Step 7 — Held item (optional; paged + searchable list).
     private MessageComponent BuildItemStep(Session s)
     {
         var b = new ComponentBuilder();
@@ -628,7 +645,7 @@ public sealed class BotRunner
         return b.Build();
     }
 
-    // Step 7 — Ball caught in.
+    // Step 8 — Ball caught in.
     private MessageComponent BuildBallStep(Session s)
     {
         var b = new ComponentBuilder();
@@ -700,7 +717,6 @@ public sealed class BotRunner
         {
             case "pokemon":
                 if (Forms(s).Count > 1) b.WithSelectMenu(FormMenu(s), r++);
-                b.WithSelectMenu(NatureMenu(s), r++);
                 b.WithButton("Change Pokémon", "set_pkm", ButtonStyle.Secondary, row: 4);
                 break;
             case "battle":
@@ -932,7 +948,7 @@ public sealed class BotRunner
         public string MetDate = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         public string OT = "Trainer", Language = "English", Nickname = "";
         public string Section = "pokemon";
-        public int Step;                       // 0 game,1 pokemon,2 shiny,3 alpha,4 level,5 item,6 ball,7 finalize,8 extras
+        public int Step;                       // 0 game,1 pokemon,2 shiny,3 alpha,4 level,5 nature,6 item,7 ball,8 finalize,9 extras
         public List<SpeciesInfo> SearchResults = [];
         public int MoveSlot;                   // which move slot (0-3) the search targets
         public List<MoveEntry> MoveResults = [];
