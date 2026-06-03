@@ -62,9 +62,9 @@ public sealed class BotRunner
         _client.Ready += OnReady;
         _client.Connected += () => { IsRunning = true; Log?.Invoke("Connected."); return Task.CompletedTask; };
         _client.Disconnected += _ => { IsRunning = false; Log?.Invoke("Disconnected."); return Task.CompletedTask; };
-        _client.SelectMenuExecuted += OnSelect;
-        _client.ButtonExecuted += OnButton;
-        _client.ModalSubmitted += OnModal;
+        _client.SelectMenuExecuted += c => Guard(OnSelect(c), c);
+        _client.ButtonExecuted += c => Guard(OnButton(c), c);
+        _client.ModalSubmitted += m => Guard(OnModal(m), m);
 
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
@@ -83,6 +83,24 @@ public sealed class BotRunner
         Log?.Invoke("Stopped.");
     }
 
+    // Never let an exception in a handler surface as a bare "This interaction failed".
+    private async Task Guard(Task handler, SocketInteraction i)
+    {
+        try { await handler; }
+        catch (Exception ex)
+        {
+            Log?.Invoke("Interaction error: " + ex.Message);
+            try
+            {
+                if (!i.HasResponded)
+                    await i.RespondAsync("⚠️ Something went wrong — please try again.", ephemeral: true);
+                else
+                    await i.FollowupAsync("⚠️ Something went wrong — please try again.", ephemeral: true);
+            }
+            catch { /* interaction may have expired; nothing more we can do */ }
+        }
+    }
+
     private async Task OnReady()
     {
         // No slash commands — interaction is via the persistent channel panel.
@@ -95,7 +113,22 @@ public sealed class BotRunner
         }
         catch (Exception ex) { Log?.Invoke("Command cleanup note: " + ex.Message); }
 
-        Log?.Invoke("Ready. Use \"Post Creator Panel\" to place the button in your channel.");
+        // Warm up per-game Pokémon lists in the background so the first clicks are instant
+        // (this is the heavy work that otherwise risks an "interaction failed" on first use).
+        _ = Task.Run(() =>
+        {
+            foreach (var g in new[] { "SV", "ZA", "SWSH", "BDSP" })
+            {
+                try { _svc.GetAllSpecies(g); } catch { }
+            }
+            Log?.Invoke("Pokémon data warmed up.");
+        });
+
+        // Auto-post the creator panel on every startup so you don't have to click Post Panel.
+        try { await PostPanelAsync(); }
+        catch (Exception ex) { Log?.Invoke("Auto-post panel note: " + ex.Message); }
+
+        Log?.Invoke("Ready.");
     }
 
     /// <summary>Posts the permanent creator panel (embed + button) into every configured channel.</summary>

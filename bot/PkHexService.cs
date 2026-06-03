@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using PKHeX.Core;
 using PKHeX.Core.AutoMod;
 
@@ -73,7 +74,9 @@ public class PkHexService
     public List<GameEntry> GetGames() =>
         GameNames.Select(g => new GameEntry(g.Key, g.Value)).ToList();
 
-    private readonly Dictionary<string, List<SpeciesInfo>> _speciesCache = new();
+    // Thread-safe: warmed in the background AND read by click handlers concurrently.
+    private readonly ConcurrentDictionary<string, List<SpeciesInfo>> _speciesCache = new();
+    private readonly ConcurrentDictionary<string, PokemonMeta> _metaCache = new();
 
     // Whether a specific form can exist in the game this PersonalInfo came from.
     // Gen8/Gen9 tables carry a reliable per-form IsPresentInGame flag; BDSP/LGPE don't,
@@ -462,6 +465,16 @@ public class PkHexService
     }
 
     public PokemonMeta GetMeta(string game, int species, int form = 0)
+    {
+        var cacheKey = $"{game}:{species}:{form}";
+        if (_metaCache.TryGetValue(cacheKey, out var cachedMeta))
+            return cachedMeta;
+        var meta = ComputeMeta(game, species, form);
+        _metaCache[cacheKey] = meta;
+        return meta;
+    }
+
+    private PokemonMeta ComputeMeta(string game, int species, int form)
     {
         if (!GameMap.TryGetValue(game, out var version))
             throw new ArgumentException($"Unknown game: {game}");
