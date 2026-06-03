@@ -104,8 +104,9 @@ public sealed class BotRunner
 
         var embed = new EmbedBuilder()
             .WithTitle("✨ Pokémon Creator")
-            .WithDescription("Click **Create Pokémon** below to build a fully legal Pokémon.\n" +
-                             "Your editor is **private — only you can see it**, and you'll get the `.trade` text when you're done.")
+            .WithDescription("This tool helps you build **Pokémon formats** that you can copy and paste into the bot channel to receive your Pokémon.\n\n" +
+                             "Click **🛠️ Create Pokémon** below to get started!\n" +
+                             "Your builder is **private — only you can see it**.")
             .WithColor(new Color(0x7c, 0x3a, 0xed))
             .Build();
 
