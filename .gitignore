@@ -24,3 +24,6 @@ inspect.csx
 .vs/
 .DS_Store
 Thumbs.db
+
+# Scratch commit/release message files
+*.tmp
