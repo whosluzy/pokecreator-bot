@@ -31,7 +31,7 @@ public sealed class BotRunner
 
     private static readonly (string, string)[] Sections =
     [
-        ("pokemon", "🔹 Form / Change Pokémon"),
+        ("pokemon", "🔹 Form"),
         ("battle", "⚔️ Ability / Gender / Tera"),
         ("statsmoves", "📊 EVs / IVs / Moves"),
         ("cosmetic", "✨ Size / Friendship / Date / Nickname"),
@@ -187,7 +187,7 @@ public sealed class BotRunner
             case "wiz_search": await c.RespondWithModalAsync(SearchModal()); return;
             case "wiz_back": s.Step = PrevStep(s); break;
             case "wiz_next": s.Step = NextStep(s); break;
-            case "open_extras": s.Section = "pokemon"; s.Step = 9; break;
+            case "open_extras": s.Section = ""; s.Step = 9; break;   // no section preselected
 
             // ── Pokémon list paging ──
             case "pg_prev": s.Page--; break;
@@ -660,7 +660,7 @@ public sealed class BotRunner
     private MessageComponent BuildFinalizeStep(Session s)
     {
         var b = new ComponentBuilder();
-        b.WithButton("✨ Extras (optional)", "open_extras", ButtonStyle.Secondary, row: 0);
+        b.WithButton("✨ See Extra Customizations", "open_extras", ButtonStyle.Secondary, row: 0);
         b.WithButton("⚡ Get Bot Ready Format", "generate", ButtonStyle.Success, disabled: s.Species == 0, row: 0);
         b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1);
         return b.Build();
@@ -709,8 +709,13 @@ public sealed class BotRunner
     private MessageComponent BuildCustomizeComponents(Session s)
     {
         var b = new ComponentBuilder();
-        var sec = new SelectMenuBuilder().WithCustomId("section").WithPlaceholder("More options…");
-        foreach (var (id, label) in Sections) sec.AddOption(label, id, isDefault: id == s.Section);
+        var sec = new SelectMenuBuilder().WithCustomId("section").WithPlaceholder("Choose what to customize…");
+        foreach (var (id, label) in Sections)
+        {
+            // Only offer the Form section when the Pokémon actually has alternate forms.
+            if (id == "pokemon" && Forms(s).Count <= 1) continue;
+            sec.AddOption(label, id, isDefault: id == s.Section);
+        }
         b.WithSelectMenu(sec, 0);
 
         int r = 1;
@@ -718,7 +723,6 @@ public sealed class BotRunner
         {
             case "pokemon":
                 if (Forms(s).Count > 1) b.WithSelectMenu(FormMenu(s), r++);
-                b.WithButton("Change Pokémon", "set_pkm", ButtonStyle.Secondary, row: 4);
                 break;
             case "battle":
                 b.WithSelectMenu(AbilityMenu(s), r++);
