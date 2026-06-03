@@ -338,7 +338,7 @@ public sealed class BotRunner
                 break;
             case "extras_modal":
                 s.Nickname = Val("nick");
-                if (int.TryParse(Val("scale"), out var sc)) s.Scale = Math.Clamp(sc, 0, 255);
+                if (!s.Alpha && int.TryParse(Val("scale"), out var sc)) { s.Scale = Math.Clamp(sc, 0, 255); s.ScaleSet = true; }
                 // These three are only "set" when the user actually enters a value.
                 if (int.TryParse(Val("friend"), out var fr)) { s.Friendship = Math.Clamp(fr, 0, 255); s.FriendshipSet = true; }
                 if (DateOnly.TryParse(Val("met"), out var d)) { s.MetDate = d.ToString("yyyy-MM-dd"); s.MetDateSet = true; }
@@ -472,7 +472,7 @@ public sealed class BotRunner
         Moves = (int[])s.Moves.Clone(), EVs = (int[])s.EVs.Clone(), IVs = (int[])s.IVs.Clone(),
         EVsSet = s.EVsSet, IVsSet = s.IVsSet,
         Friendship = s.Friendship, FriendshipSet = s.FriendshipSet,
-        Scale = s.Scale, MetDate = s.MetDate, MetDateSet = s.MetDateSet,
+        Scale = s.Scale, ScaleSet = s.ScaleSet, MetDate = s.MetDate, MetDateSet = s.MetDateSet,
         DynamaxLevel = s.DynamaxLevel, DynamaxSet = s.DynamaxSet,
         UseCustomOT = s.UseCustomOT, OT = s.OT, TID = s.TID, SID = s.SID,
         Language = s.Language, Nickname = s.Nickname, TeraType = s.TeraType,
@@ -567,7 +567,8 @@ public sealed class BotRunner
             .AddField("Trainer", s.UseCustomOT ? $"{s.OT} ({s.TID}/{s.SID})" : "AutoOT", true);
 
         if (s.Meta?.HasTeraType == true) eb.AddField("Tera", TeraTypes.ElementAtOrDefault(s.TeraType) ?? "—", true);
-        if (s.Meta?.HasScale == true) eb.AddField("Size", $"{s.Scale}", true);
+        if (s.Meta?.HasScale == true)
+            eb.AddField("Size", s.Alpha ? "α Max" : (s.ScaleSet ? s.Scale.ToString() : "Default"), true);
         eb.WithTitle(s.Step == 9 ? $"✨ Extras — {chosen}" : $"✅ Ready — {chosen}");
         eb.WithFooter(s.Step == 9
             ? "Adjust anything optional, then ◀ Back to finish."
@@ -904,8 +905,11 @@ public sealed class BotRunner
         if (s.Game == "SWSH")
             b.AddTextInput("Dynamax Level (blank = leave default)", "dmax", required: false,
                 value: s.DynamaxSet ? s.DynamaxLevel.ToString() : "", placeholder: "0-10");
-        if (s.Meta?.HasScale == true)
-            b.AddTextInput("Size / Scale (0-255)", "scale", required: false, value: s.Scale.ToString());
+        // Size is blank unless the user set it. Alpha Pokémon are always max size, so
+        // sizing is not offered for them.
+        if (s.Meta?.HasScale == true && !s.Alpha)
+            b.AddTextInput("Size / Scale (blank = leave default)", "scale", required: false,
+                value: s.ScaleSet ? s.Scale.ToString() : "", placeholder: "0-255");
         return b.Build();
     }
 
@@ -943,7 +947,7 @@ public sealed class BotRunner
         public int[] EVs = new int[6];
         public int[] IVs = [31, 31, 31, 31, 31, 31];
         public int Friendship = 255, Scale = 128, TID, SID;
-        public bool FriendshipSet, MetDateSet, DynamaxSet, EVsSet, IVsSet;
+        public bool FriendshipSet, MetDateSet, DynamaxSet, EVsSet, IVsSet, ScaleSet;
         public int DynamaxLevel;
         public string MetDate = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         public string OT = "Trainer", Language = "English", Nickname = "";

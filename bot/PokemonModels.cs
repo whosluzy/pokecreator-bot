@@ -50,6 +50,7 @@ public record PokemonConfig
     public int Friendship { get; init; } = 255;
     public bool FriendshipSet { get; init; } = false;
     public int Scale { get; init; } = 128;
+    public bool ScaleSet { get; init; } = false;
     public bool IsAlpha { get; init; } = false;
     public string MetDate { get; init; } = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
     public bool MetDateSet { get; init; } = false;

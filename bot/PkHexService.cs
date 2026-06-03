@@ -707,8 +707,9 @@ public class PkHexService
         if (config.IsAlpha)
             extra.Add("Alpha: Yes");
 
-        // Scale / size (dot-prefix batch) — only SV, ZA, PLA.
-        if (config.Game is "SV" or "ZA" or "PLA")
+        // Scale / size (dot-prefix batch) — only when the user explicitly set it, and never
+        // for Alpha Pokémon (they're always max size — ALM applies that automatically). SV/ZA/PLA only.
+        if (config.ScaleSet && !config.IsAlpha && config.Game is "SV" or "ZA" or "PLA")
             extra.Add($".Scale={config.Scale}");
 
         // Met date — only when the user explicitly set it.
