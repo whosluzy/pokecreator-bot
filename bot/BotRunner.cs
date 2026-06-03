@@ -259,20 +259,11 @@ public sealed class BotRunner
                     return;
                 }
 
-                // Instruction first, then the format ALONE in its own message so it copies cleanly.
+                // Confirm legality, then send the format ALONE in its own message so it copies cleanly.
                 await c.FollowupAsync(
-                    $"📋 Copy the format below and paste it into the **{GameName(s.Game)}** bot channel, then send it to request this Pokémon:",
+                    $"✅ **This Pokémon is legal.**\n📋 Copy the format below and paste it into the **{GameName(s.Game)}** bot channel, then send it to request this Pokémon:",
                     ephemeral: true);
                 await c.FollowupAsync(result.TradeText, ephemeral: true);
-
-                // Also attach the ready-made legal file for direct use.
-                if (result.File is { Length: > 0 } bytes && result.FileName is { } fn)
-                {
-                    using var ms = new MemoryStream(bytes);
-                    await c.FollowupWithFileAsync(ms, fn,
-                        text: "✅ Verified legal. You can also drop this file straight into a trade bot.",
-                        ephemeral: true);
-                }
                 return;
             }
         }
