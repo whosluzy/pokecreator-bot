@@ -639,7 +639,7 @@ public sealed class BotRunner
         b.WithSelectMenu(ItemPickMenu(s), 0);
         b.WithButton("◀ Prev", "item_pg_prev", ButtonStyle.Secondary, row: 1, disabled: s.ItemPage == 0);
         b.WithButton("Next ▶", "item_pg_next", ButtonStyle.Secondary, row: 1, disabled: s.ItemPage >= ItemPageCount(s) - 1);
-        b.WithButton("🔍 Search", "item_search", ButtonStyle.Primary, row: 1);
+        b.WithButton("🔍 Narrow Search", "item_search", ButtonStyle.Primary, row: 1);
         b.WithButton("Clear", "item_clear", ButtonStyle.Secondary, row: 1);
         b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 2);
         b.WithButton(s.HeldItem == 0 ? "Skip ▶" : "Next ▶", "wiz_next", ButtonStyle.Primary, row: 2);
@@ -699,7 +699,7 @@ public sealed class BotRunner
         b.WithButton($"Page {s.Page + 1}/{totalPages}", "pg_noop", ButtonStyle.Secondary, row: 1, disabled: true);
         b.WithButton("Next ▶", "pg_next", ButtonStyle.Secondary, row: 1, disabled: s.Page >= totalPages - 1);
 
-        b.WithButton("🔍 Search", "wiz_search", ButtonStyle.Primary, row: 2);
+        b.WithButton("🔍 Narrow Search", "wiz_search", ButtonStyle.Primary, row: 2);
         if (s.SearchResults.Count > 0)
             b.WithButton("Clear search", "pg_clear", ButtonStyle.Secondary, row: 2);
         b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 2);
