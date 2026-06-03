@@ -126,7 +126,7 @@ public sealed class BotRunner
         var v = c.Data.Values.FirstOrDefault() ?? "";
         switch (c.Data.CustomId)
         {
-            case "section": s.Section = v; break;
+            case "section": s.Section = v; s.ItemResults = []; s.ItemPage = 0; break;
             case "game":
                 ApplyGame(s, v);
                 s.Page = 0;
@@ -192,6 +192,10 @@ public sealed class BotRunner
             case "pg_prev": s.Page--; break;
             case "pg_next": s.Page++; break;
             case "pg_clear": s.SearchResults = []; s.Page = 0; break;
+
+            // ── held-item list paging ──
+            case "item_pg_prev": s.ItemPage--; break;
+            case "item_pg_next": s.ItemPage++; break;
             case "shiny_yes":
                 s.Shiny = true;
                 if (s.Meta is { ShinyMinLevel: > 0 } && s.Level < s.Meta.ShinyMinLevel)
@@ -219,7 +223,7 @@ public sealed class BotRunner
                 s.ItemResults = [];
                 await c.RespondWithModalAsync(SearchModalFor("item_search", "Search held item"));
                 return;
-            case "item_clear": s.HeldItem = 0; s.ItemResults = []; break;
+            case "item_clear": s.HeldItem = 0; s.ItemResults = []; s.ItemPage = 0; break;
             case "open_balls": s.Section = "balls"; break;
             case "back_items": s.Section = "items"; break;
             case "edit_extras": await c.RespondWithModalAsync(ExtrasModal(s)); return;
@@ -299,7 +303,8 @@ public sealed class BotRunner
             case "item_search":
             {
                 var q = Val("q").ToLowerInvariant();
-                s.ItemResults = Items(s.Game).Where(x => x.Name.ToLowerInvariant().Contains(q)).Take(25).ToList();
+                s.ItemResults = Items(s.Game).Where(x => x.Name.ToLowerInvariant().Contains(q)).ToList();
+                s.ItemPage = 0;
                 if (s.ItemResults.Count == 1)
                 {
                     s.HeldItem = s.ItemResults[0].Id;
@@ -317,10 +322,15 @@ public sealed class BotRunner
                 break;
             }
             case "stats_modal":
-                s.EVs = ParseStats(Val("evs"), s.StatMax(), s.EVs);
-                s.IVs = ParseStats(Val("ivs"), 31, s.IVs);
+            {
+                // Only mark EVs/IVs as "set" (and thus shown in the format) when the user
+                // actually typed values — a blank field leaves them at defaults and off the format.
+                var evsIn = Val("evs"); var ivsIn = Val("ivs");
+                if (!string.IsNullOrWhiteSpace(evsIn)) { s.EVs = ParseStats(evsIn, s.StatMax(), s.EVs); s.EVsSet = true; }
+                if (!string.IsNullOrWhiteSpace(ivsIn)) { s.IVs = ParseStats(ivsIn, 31, s.IVs); s.IVsSet = true; }
                 ClampEvTotal(s);
                 break;
+            }
             case "moves_modal":
                 for (int i = 0; i < 4; i++) s.Moves[i] = ResolveMove(s, Val($"m{i}"));
                 break;
@@ -447,6 +457,7 @@ public sealed class BotRunner
         IsShiny = s.Shiny, IsAlpha = s.Alpha, Gender = s.Gender, Nature = s.Nature,
         Ability = s.Ability, HeldItem = s.HeldItem, Ball = s.Ball,
         Moves = (int[])s.Moves.Clone(), EVs = (int[])s.EVs.Clone(), IVs = (int[])s.IVs.Clone(),
+        EVsSet = s.EVsSet, IVsSet = s.IVsSet,
         Friendship = s.Friendship, FriendshipSet = s.FriendshipSet,
         Scale = s.Scale, MetDate = s.MetDate, MetDateSet = s.MetDateSet,
         DynamaxLevel = s.DynamaxLevel, DynamaxSet = s.DynamaxSet,
@@ -629,11 +640,14 @@ public sealed class BotRunner
                 if (s.Meta?.HasTeraType == true) b.WithSelectMenu(TeraMenu(s), r++);
                 break;
             case "items":
-                b.WithSelectMenu(ItemPickMenu(s), r++);   // held-item list (A–Z; search narrows)
+                b.WithSelectMenu(ItemPickMenu(s), r++);   // paged held-item list (A–Z; search narrows)
                 b.WithSelectMenu(LanguageMenu(s), r++);
-                b.WithButton($"Ball Caught: {BallName(s, s.Ball)}", "open_balls", ButtonStyle.Secondary, row: 3);
-                b.WithButton("🔍 Search item", "item_search", ButtonStyle.Primary, row: 3);
-                b.WithButton("Clear item", "item_clear", ButtonStyle.Secondary, row: 3);
+                // Item pager + actions (max 5 buttons per row).
+                b.WithButton("◀ Prev", "item_pg_prev", ButtonStyle.Secondary, row: 3, disabled: s.ItemPage == 0);
+                b.WithButton("Next ▶", "item_pg_next", ButtonStyle.Secondary, row: 3, disabled: s.ItemPage >= ItemPageCount(s) - 1);
+                b.WithButton("🔍 Search", "item_search", ButtonStyle.Primary, row: 3);
+                b.WithButton("Clear", "item_clear", ButtonStyle.Secondary, row: 3);
+                b.WithButton($"Ball: {BallName(s, s.Ball)}", "open_balls", ButtonStyle.Secondary, row: 3);
                 break;
             case "statsmoves":
                 if (s.MoveResults.Count > 0) b.WithSelectMenu(MovePickMenu(s), r++);
@@ -676,13 +690,26 @@ public sealed class BotRunner
         return m;
     }
 
+    private const int ItemPageSize = 24;   // 24 + the "— None —" option = 25 (Discord max)
+
+    private int ItemPageCount(Session s)
+    {
+        var list = s.ItemResults.Count > 0 ? s.ItemResults : Items(s.Game);
+        return Math.Max(1, (list.Count + ItemPageSize - 1) / ItemPageSize);
+    }
+
     private SelectMenuBuilder ItemPickMenu(Session s)
     {
-        // Default to the first 24 items (A–Z); a search replaces them with matches.
-        var list = s.ItemResults.Count > 0 ? s.ItemResults : Items(s.Game);
-        var m = new SelectMenuBuilder().WithCustomId("item_pick").WithPlaceholder("Pick held item…");
+        // Full browsable, paged item list (A–Z). A search narrows it; pages scroll through all.
+        var list = (s.ItemResults.Count > 0 ? s.ItemResults : Items(s.Game))
+            .OrderBy(x => x.Name).ToList();
+        int totalPages = ItemPageCount(s);
+        s.ItemPage = Math.Clamp(s.ItemPage, 0, totalPages - 1);
+
+        var m = new SelectMenuBuilder().WithCustomId("item_pick")
+            .WithPlaceholder($"Pick held item… (page {s.ItemPage + 1}/{totalPages})");
         m.AddOption("— None —", "0");
-        foreach (var it in list.OrderBy(x => x.Name).Take(24))
+        foreach (var it in list.Skip(s.ItemPage * ItemPageSize).Take(ItemPageSize))
             m.AddOption(it.Name.Length > 100 ? it.Name[..100] : it.Name, it.Id.ToString());
         return m;
     }
@@ -825,6 +852,7 @@ public sealed class BotRunner
     {
         public string Game = "";          // empty until the user picks — no pre-selection
         public int Page;                  // current page in the browsable Pokémon list
+        public int ItemPage;              // current page in the browsable held-item list
         public int Species;
         public string SpeciesName = "";
         public int Form;
@@ -835,7 +863,7 @@ public sealed class BotRunner
         public int[] EVs = new int[6];
         public int[] IVs = [31, 31, 31, 31, 31, 31];
         public int Friendship = 255, Scale = 128, TID, SID;
-        public bool FriendshipSet, MetDateSet, DynamaxSet;
+        public bool FriendshipSet, MetDateSet, DynamaxSet, EVsSet, IVsSet;
         public int DynamaxLevel;
         public string MetDate = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         public string OT = "Trainer", Language = "English", Nickname = "";

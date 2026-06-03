@@ -688,6 +688,9 @@ public class PkHexService
             // Drop a placeholder ability line ("Ability: (None)") when no real ability is chosen —
             // it isn't a valid Showdown line and makes ALM reject the set. ALM picks a legal ability.
             .Where(l => !(l.StartsWith("Ability:") && (config.Ability <= 0 || l.Contains("(None)"))))
+            // Only show EVs / IVs when the user actually set them (ALM fills legal defaults otherwise).
+            .Where(l => config.EVsSet || !l.StartsWith("EVs:"))
+            .Where(l => config.IVsSet || !l.StartsWith("IVs:"))
             .ToList();
 
         var extra = new List<string>();
@@ -901,9 +904,14 @@ public class PkHexService
 
         if (config.IVs.Length >= 6)
         {
-            ReadOnlySpan<int> ivs = [config.IVs[0], config.IVs[1], config.IVs[2],
-                                     config.IVs[3], config.IVs[4], config.IVs[5]];
-            pk.SetIVs(ivs);
+            // Config uses Showdown stat order [HP, Atk, Def, SpA, SpD, Spe]; assign by name so
+            // it can't be mis-mapped to PKHeX's internal order (which puts Spe before SpA).
+            pk.IV_HP  = config.IVs[0];
+            pk.IV_ATK = config.IVs[1];
+            pk.IV_DEF = config.IVs[2];
+            pk.IV_SPA = config.IVs[3];
+            pk.IV_SPD = config.IVs[4];
+            pk.IV_SPE = config.IVs[5];
         }
 
         if (config.IsShiny)

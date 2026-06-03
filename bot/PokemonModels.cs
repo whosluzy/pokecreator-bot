@@ -45,6 +45,8 @@ public record PokemonConfig
     public int[] Moves { get; init; } = new int[4];
     public int[] EVs { get; init; } = new int[6];
     public int[] IVs { get; init; } = [31, 31, 31, 31, 31, 31];
+    public bool EVsSet { get; init; } = false;
+    public bool IVsSet { get; init; } = false;
     public int Friendship { get; init; } = 255;
     public bool FriendshipSet { get; init; } = false;
     public int Scale { get; init; } = 128;

@@ -14,7 +14,10 @@ public static class ALMVersion
         public readonly Version? AlmVersionCurrent = GetCurrentVersion("PKHeX.Core.AutoMod");
 
         public readonly Version? CoreVersionCurrent = GetCurrentVersion("PKHeX.Core");
-        public readonly Version? CoreVersionLatest = GetLatestCoreVersion();
+        // Vendored: never hit the network for the "latest" version. We ship a fixed, matched
+        // Core+ALM pair and GetIsMismatch() is hard-disabled, so this value is unused — leaving
+        // the synchronous GitHub call in would only risk hangs/exceptions on the bot thread.
+        public readonly Version? CoreVersionLatest = null;
     }
 
     /// <summary>
