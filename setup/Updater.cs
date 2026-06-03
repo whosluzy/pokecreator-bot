@@ -10,7 +10,7 @@ namespace pokecreator_setup;
 public static class Updater
 {
     // Bumped on every published build. Compared against the latest release tag.
-    public const string AppVersion = "1.2.0";
+    public const string AppVersion = "1.2.1";
 
     // Filled in once the repo exists (owner/repo).
     public const string RepoOwner = "whosluzy";

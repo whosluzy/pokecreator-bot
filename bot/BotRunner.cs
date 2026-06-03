@@ -129,6 +129,7 @@ public sealed class BotRunner
             case "section": s.Section = v; break;
             case "game":
                 ApplyGame(s, v);
+                s.Page = 0;
                 if (s.Step == 0) { s.SearchResults = []; s.Step = 1; } // game -> pokemon
                 break;
             case "pick":
@@ -174,8 +175,7 @@ public sealed class BotRunner
                 await c.RespondAsync($"❌ This panel only works in <#{_channelId}>.", ephemeral: true);
                 return;
             }
-            var fresh = new Session { Step = 0 };
-            ApplyGame(fresh, "SV");
+            var fresh = new Session { Step = 0 };   // no game pre-selected
             _sessions[c.User.Id] = fresh;
             await c.RespondAsync(embed: BuildEmbed(fresh), components: BuildComponents(fresh), ephemeral: true);
             return;
@@ -187,6 +187,11 @@ public sealed class BotRunner
             // ── wizard steps ──
             case "wiz_search": await c.RespondWithModalAsync(SearchModal()); return;
             case "wiz_back": s.Step = PrevStep(s); break;
+
+            // ── Pokémon list paging ──
+            case "pg_prev": s.Page--; break;
+            case "pg_next": s.Page++; break;
+            case "pg_clear": s.SearchResults = []; s.Page = 0; break;
             case "shiny_yes":
                 s.Shiny = true;
                 if (s.Meta is { ShinyMinLevel: > 0 } && s.Level < s.Meta.ShinyMinLevel)
@@ -269,7 +274,8 @@ public sealed class BotRunner
                 s.SearchResults = s.SpeciesList
                     .Where(x => x.Name.ToLowerInvariant().Contains(q)
                              || (x.FormName?.ToLowerInvariant().Contains(q) ?? false))
-                    .Take(25).ToList();
+                    .ToList();
+                s.Page = 0;
                 if (s.SearchResults.Count == 1)
                 {
                     var pick = s.SearchResults[0];
@@ -470,9 +476,11 @@ public sealed class BotRunner
                     break;
                 case 1:
                     eb2.WithTitle("Step 2 · Choose your Pokémon")
-                       .WithDescription($"**Game:** {GameName(s.Game)}\n\nClick **Search Pokémon**, type a name, then pick it from the list.");
+                       .WithDescription($"**Game:** {GameName(s.Game)}\n\nBrowse the list with **◀ Prev / Next ▶**, or **🔍 Search** by name. Every Pokémon available in this game is here.");
                     if (s.SearchResults.Count > 0)
-                        eb2.AddField("Matches", string.Join(", ", s.SearchResults.Take(10).Select(x => x.Name + (x.FormName != null ? $" ({x.FormName})" : ""))), false);
+                        eb2.AddField($"Search matches ({s.SearchResults.Count})",
+                            string.Join(", ", s.SearchResults.Take(10).Select(x => x.Name + (x.FormName != null ? $" ({x.FormName})" : "")))
+                            + (s.SearchResults.Count > 10 ? " …" : ""), false);
                     break;
                 case 2:
                     if (s.Meta?.CanBeShiny == true)
@@ -549,15 +557,25 @@ public sealed class BotRunner
         return b.Build();
     }
 
+    private const int PokePageSize = 25;
+
     private MessageComponent BuildPokemonStep(Session s)
     {
         var b = new ComponentBuilder();
-        // Always show a list. Default to the first 25 (A–Z); search narrows it.
-        var list = s.SearchResults.Count > 0 ? s.SearchResults : s.SpeciesList;
-        if (list.Count > 0)
+        // Full browsable list (every Pokémon in the game), in National Dex order.
+        // A search narrows the list; pages let you scroll through all of them.
+        var list = (s.SearchResults.Count > 0 ? s.SearchResults : s.SpeciesList)
+            .OrderBy(x => x.Id).ThenBy(x => x.Form).ToList();
+
+        int totalPages = Math.Max(1, (list.Count + PokePageSize - 1) / PokePageSize);
+        s.Page = Math.Clamp(s.Page, 0, totalPages - 1);
+        var pageItems = list.Skip(s.Page * PokePageSize).Take(PokePageSize).ToList();
+
+        if (pageItems.Count > 0)
         {
-            var pick = new SelectMenuBuilder().WithCustomId("pick").WithPlaceholder("Pick your Pokémon…");
-            foreach (var r in list.OrderBy(x => x.Name).Take(25))
+            var pick = new SelectMenuBuilder().WithCustomId("pick")
+                .WithPlaceholder($"Pick your Pokémon… (page {s.Page + 1}/{totalPages})");
+            foreach (var r in pageItems)
             {
                 // Pikachu's alternate forms are hats/caps → tag "Hat" instead of HOME.
                 string tag = r.Id == 25 && r.Form > 0 ? " (Hat)" : r.Native ? "" : " ⇄HOME";
@@ -566,8 +584,16 @@ public sealed class BotRunner
             }
             b.WithSelectMenu(pick, 0);
         }
-        b.WithButton("🔍 Search by name", "wiz_search", ButtonStyle.Primary, row: 1);
-        b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1);
+
+        // Pager controls.
+        b.WithButton("◀ Prev", "pg_prev", ButtonStyle.Secondary, row: 1, disabled: s.Page == 0);
+        b.WithButton($"Page {s.Page + 1}/{totalPages}", "pg_noop", ButtonStyle.Secondary, row: 1, disabled: true);
+        b.WithButton("Next ▶", "pg_next", ButtonStyle.Secondary, row: 1, disabled: s.Page >= totalPages - 1);
+
+        b.WithButton("🔍 Search", "wiz_search", ButtonStyle.Primary, row: 2);
+        if (s.SearchResults.Count > 0)
+            b.WithButton("Clear search", "pg_clear", ButtonStyle.Secondary, row: 2);
+        b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 2);
         return b.Build();
     }
 
@@ -797,7 +823,8 @@ public sealed class BotRunner
 
     private sealed class Session
     {
-        public string Game = "SV";
+        public string Game = "";          // empty until the user picks — no pre-selection
+        public int Page;                  // current page in the browsable Pokémon list
         public int Species;
         public string SpeciesName = "";
         public int Form;

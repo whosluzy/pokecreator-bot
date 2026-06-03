@@ -1,0 +1,10 @@
+Bot UX: readable ball line, paged Pokemon list, no default game
+
+- Ball line in the output now reads "Ball: Dusk Ball" (name + " Ball"),
+  which ALM round-trips back to the correct ball.
+- Choose-Pokemon step is now a browsable, paged list (Prev/Next) covering
+  every Pokemon in the selected game, with search across all matches.
+- No game is pre-selected anymore; the wizard waits for the user to pick,
+  fixing issues caused by the implicit Scarlet/Violet default.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

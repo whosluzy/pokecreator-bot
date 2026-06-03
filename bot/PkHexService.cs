@@ -677,9 +677,10 @@ public class PkHexService
         if (config.IsShiny)
             extra.Add("Shiny: Yes");
 
-        // Caught ball — emit as an ALM regen line so it's factored into encounter selection.
+        // Caught ball — emit as an ALM regen line ("Ball: Dusk Ball") so it's both readable
+        // and factored into encounter selection. ALM parses the "<Name> Ball" form.
         if (config.Ball > 0)
-            extra.Add($"Ball: {(Ball)config.Ball}");
+            extra.Add($"Ball: {(Ball)config.Ball} Ball");
 
         // Alpha (Legends games).
         if (config.IsAlpha)
