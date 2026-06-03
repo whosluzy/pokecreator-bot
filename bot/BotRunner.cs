@@ -58,7 +58,7 @@ public sealed class BotRunner
         ("pokemon", "🔹 Form"),
         ("battle", "⚔️ Ability / Gender / Tera"),
         ("statsmoves", "📊 EVs / IVs / Moves"),
-        ("cosmetic", "✨ Size / Friendship / Date / Nickname"),
+        ("cosmetic", "📝 Met Date / Nickname"),
         ("trainer", "🪪 Trainer / Language"),
     ];
 
@@ -210,11 +210,11 @@ public sealed class BotRunner
             }
             case "form": s.Form = int.Parse(v); ApplyMeta(s); RefreshLists(s); break;
             case "level": s.Level = int.Parse(v); break;
-            case "nature": s.Nature = int.Parse(v); break;
-            case "ability": s.Ability = int.Parse(v); break;
+            case "nature": s.Nature = int.Parse(v); s.NatureSet = true; break;
+            case "ability": s.Ability = int.Parse(v); s.AbilitySet = true; break;
             case "gender": s.Gender = int.Parse(v); break;
-            case "ball": s.Ball = int.Parse(v); break;
-            case "tera": s.TeraType = int.Parse(v); break;
+            case "ball": s.Ball = int.Parse(v); s.BallSet = true; break;
+            case "tera": s.TeraType = int.Parse(v); s.TeraSet = true; break;
             case "language": s.Language = v; break;
             case "move_pick":
                 if (s.MoveSlot is >= 0 and < 4) s.Moves[s.MoveSlot] = int.Parse(v);
@@ -298,6 +298,7 @@ public sealed class BotRunner
             case "alpha": if (s.Meta?.HasAlpha == true) s.Alpha = !s.Alpha; break;
             case "customot": s.UseCustomOT = !s.UseCustomOT; break;
             case "generate":
+            case "done":
             {
                 if (s.Species == 0) { await c.RespondAsync("Pick a Pokémon first.", ephemeral: true); return; }
                 await c.DeferAsync();   // acknowledge by deferring the editor update
@@ -406,9 +407,7 @@ public sealed class BotRunner
                 break;
             case "extras_modal":
                 s.Nickname = Val("nick");
-                if (!s.Alpha && int.TryParse(Val("scale"), out var sc)) { s.Scale = Math.Clamp(sc, 0, 255); s.ScaleSet = true; }
-                // These three are only "set" when the user actually enters a value.
-                if (int.TryParse(Val("friend"), out var fr)) { s.Friendship = Math.Clamp(fr, 0, 255); s.FriendshipSet = true; }
+                // Only "set" (and thus added to the format) when the user actually enters a value.
                 if (DateOnly.TryParse(Val("met"), out var d)) { s.MetDate = d.ToString("yyyy-MM-dd"); s.MetDateSet = true; }
                 if (int.TryParse(Val("dmax"), out var dm)) { s.DynamaxLevel = Math.Clamp(dm, 0, 10); s.DynamaxSet = true; }
                 break;
@@ -535,15 +534,17 @@ public sealed class BotRunner
     private PokemonConfig BuildConfig(Session s) => new()
     {
         Game = s.Game, Species = s.Species, Form = s.Form, Level = s.Level,
-        IsShiny = s.Shiny, IsAlpha = s.Alpha, Gender = s.Gender, Nature = s.Nature,
-        Ability = s.Ability, HeldItem = s.HeldItem, Ball = s.Ball,
+        IsShiny = s.Shiny, IsAlpha = s.Alpha, Gender = s.Gender,
+        Nature = s.Nature, NatureSet = s.NatureSet,
+        Ability = s.Ability, AbilitySet = s.AbilitySet,
+        HeldItem = s.HeldItem, Ball = s.Ball, BallSet = s.BallSet,
+        TeraType = s.TeraType, TeraSet = s.TeraSet,
         Moves = (int[])s.Moves.Clone(), EVs = (int[])s.EVs.Clone(), IVs = (int[])s.IVs.Clone(),
         EVsSet = s.EVsSet, IVsSet = s.IVsSet,
-        Friendship = s.Friendship, FriendshipSet = s.FriendshipSet,
-        Scale = s.Scale, ScaleSet = s.ScaleSet, MetDate = s.MetDate, MetDateSet = s.MetDateSet,
+        MetDate = s.MetDate, MetDateSet = s.MetDateSet,
         DynamaxLevel = s.DynamaxLevel, DynamaxSet = s.DynamaxSet,
         UseCustomOT = s.UseCustomOT, OT = s.OT, TID = s.TID, SID = s.SID,
-        Language = s.Language, Nickname = s.Nickname, TeraType = s.TeraType,
+        Language = s.Language, Nickname = s.Nickname,
     };
 
     // Plain text (no code fences) so copy/paste is clean — no ``` and nothing else.
@@ -622,21 +623,18 @@ public sealed class BotRunner
             .AddField("Level", s.Level.ToString(), true)
             .AddField("Shiny", s.Shiny ? "✨ Yes" : "No", true)
             .AddField("Alpha", s.Meta?.HasAlpha == true ? (s.Alpha ? "α Yes" : "No") : "N/A", true)
-            .AddField("Nature", NatureName(s.Nature), true)
-            .AddField("Ability", s.Game == "ZA" ? "N/A" : AbilityName(s, s.Ability), true)
+            .AddField("Nature", s.NatureSet ? NatureName(s.Nature) : "Any", true)
+            .AddField("Ability", s.Game == "ZA" ? "N/A" : (s.AbilitySet ? AbilityName(s, s.Ability) : "Any"), true)
             .AddField("Gender", GenderName(s.Gender), true)
-            .AddField("Ball Caught", BallName(s, s.Ball), true)
+            .AddField("Ball Caught", s.BallSet ? BallName(s, s.Ball) : "Any", true)
             .AddField("Held Item", s.HeldItem == 0 ? "None" : ItemName(s, s.HeldItem), true)
-            .AddField(statLabel + "s", FormatStats(s.EVs), true)
-            .AddField("IVs", FormatStats(s.IVs), true)
+            .AddField(statLabel + "s", s.EVsSet ? FormatStats(s.EVs) : "Default", true)
+            .AddField("IVs", s.IVsSet ? FormatStats(s.IVs) : "Default", true)
             .AddField("Moves", string.IsNullOrEmpty(moves) ? "—" : moves, false)
-            .AddField("Friendship", s.Friendship.ToString(), true)
-            .AddField("Met Date", s.MetDate, true)
+            .AddField("Met Date", s.MetDateSet ? s.MetDate : "Default", true)
             .AddField("Trainer", s.UseCustomOT ? $"{s.OT} ({s.TID}/{s.SID})" : "AutoOT", true);
 
-        if (s.Meta?.HasTeraType == true) eb.AddField("Tera", TeraTypes.ElementAtOrDefault(s.TeraType) ?? "—", true);
-        if (s.Meta?.HasScale == true)
-            eb.AddField("Size", s.Alpha ? "α Max" : (s.ScaleSet ? s.Scale.ToString() : "Default"), true);
+        if (s.Meta?.HasTeraType == true) eb.AddField("Tera", s.TeraSet ? (TeraTypes.ElementAtOrDefault(s.TeraType) ?? "—") : "Any", true);
         eb.WithTitle(s.Step == 9 ? $"✨ Extras — {chosen}" : $"✅ Ready — {chosen}");
         eb.WithFooter(s.Step == 9
             ? "Adjust anything optional, then ◀ Back to finish."
@@ -690,13 +688,14 @@ public sealed class BotRunner
         return b.Build();
     }
 
-    // Step 6 — Nature.
+    // Step 6 — Nature (optional).
     private MessageComponent BuildNatureStep(Session s)
     {
         var b = new ComponentBuilder();
         b.WithSelectMenu(NatureMenu(s), 0);
         b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1);
         b.WithButton("Next ▶", "wiz_next", ButtonStyle.Primary, row: 1);
+        b.WithButton("✅ Done", "done", ButtonStyle.Success, row: 1);
         return b.Build();
     }
 
@@ -711,16 +710,18 @@ public sealed class BotRunner
         b.WithButton("Clear", "item_clear", ButtonStyle.Secondary, row: 1);
         b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 2);
         b.WithButton(s.HeldItem == 0 ? "Skip ▶" : "Next ▶", "wiz_next", ButtonStyle.Primary, row: 2);
+        b.WithButton("✅ Done", "done", ButtonStyle.Success, row: 2);
         return b.Build();
     }
 
-    // Step 8 — Ball caught in.
+    // Step 8 — Ball caught in (optional).
     private MessageComponent BuildBallStep(Session s)
     {
         var b = new ComponentBuilder();
         b.WithSelectMenu(BallMenu(s), 0);
         b.WithButton("◀ Back", "wiz_back", ButtonStyle.Secondary, row: 1);
         b.WithButton("Next ▶", "wiz_next", ButtonStyle.Primary, row: 1);
+        b.WithButton("✅ Done", "done", ButtonStyle.Success, row: 1);
         return b.Build();
     }
 
@@ -807,7 +808,7 @@ public sealed class BotRunner
                 b.WithButton("Move 4", "m3", ButtonStyle.Secondary, row: 3);
                 break;
             case "cosmetic":
-                b.WithButton("Size / Friendship / Date / Nickname", "edit_extras", ButtonStyle.Primary, row: 3);
+                b.WithButton("Met Date / Nickname", "edit_extras", ButtonStyle.Primary, row: 3);
                 break;
             case "trainer":
                 b.WithSelectMenu(LanguageMenu(s), r++);
@@ -967,22 +968,15 @@ public sealed class BotRunner
 
     private static Modal ExtrasModal(Session s)
     {
-        // Friendship / Met Date / Dynamax are left BLANK on purpose — they are only
-        // added to the output if the user actually fills them in.
+        // Met Date / Dynamax are left BLANK on purpose — they're only added to the output
+        // if the user actually fills them in.
         var b = new ModalBuilder().WithTitle("Extras").WithCustomId("extras_modal")
             .AddTextInput("Nickname (blank = species name)", "nick", required: false, value: s.Nickname)
-            .AddTextInput("Friendship (blank = leave default)", "friend", required: false,
-                value: s.FriendshipSet ? s.Friendship.ToString() : "", placeholder: "0-255")
             .AddTextInput("Met Date (blank = leave default)", "met", required: false,
                 value: s.MetDateSet ? s.MetDate : "", placeholder: "YYYY-MM-DD");
         if (s.Game == "SWSH")
             b.AddTextInput("Dynamax Level (blank = leave default)", "dmax", required: false,
                 value: s.DynamaxSet ? s.DynamaxLevel.ToString() : "", placeholder: "0-10");
-        // Size is blank unless the user set it. Alpha Pokémon are always max size, so
-        // sizing is not offered for them.
-        if (s.Meta?.HasScale == true && !s.Alpha)
-            b.AddTextInput("Size / Scale (blank = leave default)", "scale", required: false,
-                value: s.ScaleSet ? s.Scale.ToString() : "", placeholder: "0-255");
         return b.Build();
     }
 
@@ -1019,8 +1013,8 @@ public sealed class BotRunner
         public int[] Moves = new int[4];
         public int[] EVs = new int[6];
         public int[] IVs = [31, 31, 31, 31, 31, 31];
-        public int Friendship = 255, Scale = 128, TID, SID;
-        public bool FriendshipSet, MetDateSet, DynamaxSet, EVsSet, IVsSet, ScaleSet;
+        public int TID, SID;
+        public bool MetDateSet, DynamaxSet, EVsSet, IVsSet, NatureSet, BallSet, AbilitySet, TeraSet;
         public int DynamaxLevel;
         public string MetDate = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         public string OT = "Trainer", Language = "English", Nickname = "";

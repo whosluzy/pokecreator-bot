@@ -712,14 +712,16 @@ public class PkHexService
         // Base Showdown text gives us the correct species/form name, gender tag, item,
         // ability, level, nature, EVs/IVs, moves and Tera. Strip lines we re-emit ourselves.
         var rawText = ShowdownParsing.GetShowdownText(pk);
+        // Everything is OPTIONAL except species/level/shiny/alpha: only emit a line when the
+        // user actually chose that value, otherwise leave it out and let ALM fill a legal default.
         var baseLines = rawText.Split('\n')
             .Select(l => l.TrimEnd('\r'))
             .Where(l => !l.StartsWith("Friendship:") && !l.StartsWith("Shiny:"))
-            // Drop a placeholder ability line ("Ability: (None)") when no real ability is chosen —
-            // it isn't a valid Showdown line and makes ALM reject the set. ALM picks a legal ability.
-            // Legends: Z-A doesn't use abilities, so never emit one there.
-            .Where(l => !(l.StartsWith("Ability:") && (config.Ability <= 0 || config.Game == "ZA" || l.Contains("(None)"))))
-            // Only show EVs / IVs when the user actually set them (ALM fills legal defaults otherwise).
+            // Ability: only when chosen (and never for Z-A, which has no abilities).
+            .Where(l => !(l.StartsWith("Ability:") && (!config.AbilitySet || config.Ability <= 0 || config.Game == "ZA" || l.Contains("(None)"))))
+            // Nature / Tera / EVs / IVs: only when the user set them.
+            .Where(l => config.NatureSet || !l.EndsWith(" Nature"))
+            .Where(l => config.TeraSet || !l.StartsWith("Tera Type:"))
             .Where(l => config.EVsSet || !l.StartsWith("EVs:"))
             .Where(l => config.IVsSet || !l.StartsWith("IVs:"))
             .ToList();
@@ -729,29 +731,20 @@ public class PkHexService
         if (config.IsShiny)
             extra.Add("Shiny: Yes");
 
-        // Caught ball — emit as an ALM regen line ("Ball: Dusk Ball") so it's both readable
-        // and factored into encounter selection. ALM parses the "<Name> Ball" form.
-        if (config.Ball > 0)
+        // Caught ball — only when the user chose one. Emitted as an ALM regen line
+        // ("Ball: Dusk Ball") so it's both readable and factored into encounter selection.
+        if (config.BallSet && config.Ball > 0)
             extra.Add($"Ball: {(Ball)config.Ball} Ball");
 
         // Alpha (Legends games).
         if (config.IsAlpha)
             extra.Add("Alpha: Yes");
 
-        // Scale / size (dot-prefix batch) — only when the user explicitly set it, and never
-        // for Alpha Pokémon (they're always max size — ALM applies that automatically). SV/ZA/PLA only.
-        if (config.ScaleSet && !config.IsAlpha && config.Game is "SV" or "ZA" or "PLA")
-            extra.Add($".Scale={config.Scale}");
-
         // Met date — only when the user explicitly set it.
         if (config.MetDateSet
             && !string.IsNullOrWhiteSpace(config.MetDate)
             && DateOnly.TryParse(config.MetDate, out var d))
             extra.Add($".MetDate={d:yyyyMMdd}");
-
-        // Friendship — only when the user explicitly set it.
-        if (config.FriendshipSet)
-            extra.Add($".OriginalTrainerFriendship={config.Friendship}");
 
         // Dynamax Level — only when the user explicitly set it (Sword/Shield).
         if (config.DynamaxSet)
@@ -818,13 +811,21 @@ public class PkHexService
             string why = res.Status switch
             {
                 LegalizationResult.Failed =>
-                    "This exact combination can't legally exist. Try adjusting level, ability, ball, shiny or moves.",
+                    "This exact combination can't legally exist.",
                 LegalizationResult.Timeout =>
                     "Took too long to legalize — try again or simplify the request.",
                 LegalizationResult.VersionMismatch =>
                     "Legalizer version mismatch.",
                 _ => res.Status.ToString(),
             };
+
+            // Explain WHY: build the requested Pokémon directly and ask PKHeX what's wrong.
+            var reasons = ExplainIllegality(config);
+            if (reasons.Count > 0)
+                why += "\n\n**Why:**\n• " + string.Join("\n• ", reasons);
+            else
+                why += " Try adjusting level, ability, ball, shiny or moves.";
+
             return new LegalGenResult(false, "", null, null, res.Status.ToString(), why);
         }
 
@@ -850,6 +851,34 @@ public class PkHexService
 
         return new LegalGenResult(true, trade, pk.Data.ToArray(), $"{name}{ext}",
             "Regenerated", null);
+    }
+
+    // Builds the requested Pokémon as-is and asks PKHeX which checks fail, so we can tell the
+    // user in plain-ish terms why a request was rejected.
+    private List<string> ExplainIllegality(PokemonConfig config)
+    {
+        var reasons = new List<string>();
+        try
+        {
+            // Targeted, user-friendly checks on the attributes the user actually controls.
+            // (Raw legality analysis on a bare entity produces misleading noise, so we don't use it.)
+            var meta = GetMeta(config.Game, config.Species, config.Form);
+
+            if (config.IsShiny && !meta.CanBeShiny)
+                reasons.Add("This Pokémon doesn't exist in a Shiny form in this game.");
+            else if (config.IsShiny && meta.ShinyMinLevel > 0 && config.Level < meta.ShinyMinLevel)
+                reasons.Add($"A Shiny one must be at least Level {meta.ShinyMinLevel}.");
+
+            if (config.IsAlpha && !meta.HasAlpha)
+                reasons.Add("This Pokémon can't be an Alpha in this game.");
+            else if (config.IsAlpha && meta.AlphaMinLevel > 0 && config.Level < meta.AlphaMinLevel)
+                reasons.Add($"An Alpha must be at least Level {meta.AlphaMinLevel}.");
+
+            if (meta.MinLevel > 0 && config.Level < meta.MinLevel)
+                reasons.Add($"Level must be at least {meta.MinLevel} for this Pokémon.");
+        }
+        catch { /* best-effort explanation only */ }
+        return reasons;
     }
 
     // Preview text (also ALM-gated): returns the legal .trade text, or an error string.

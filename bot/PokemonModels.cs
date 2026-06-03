@@ -39,9 +39,12 @@ public record PokemonConfig
     public bool IsShiny { get; init; }
     public int Gender { get; init; } = 0;
     public int Nature { get; init; }
+    public bool NatureSet { get; init; } = false;
     public int Ability { get; init; }
+    public bool AbilitySet { get; init; } = false;
     public int HeldItem { get; init; }
     public int Ball { get; init; } = 4;
+    public bool BallSet { get; init; } = false;
     public int[] Moves { get; init; } = new int[4];
     public int[] EVs { get; init; } = new int[6];
     public int[] IVs { get; init; } = [31, 31, 31, 31, 31, 31];
@@ -63,6 +66,7 @@ public record PokemonConfig
     public string Language { get; init; } = "English";
     public string? Nickname { get; init; }
     public int TeraType { get; init; } = 18;
+    public bool TeraSet { get; init; } = false;
 }
 
 public record ValidationResult(bool IsLegal, string Report, List<LegalityIssue> Issues);
