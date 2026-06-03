@@ -19,7 +19,16 @@ public sealed class BotRunner
     private readonly ConcurrentDictionary<string, List<ItemInfo>> _itemCache = new();
     private DiscordSocketClient? _client;
     private string? _guildId;
-    private ulong _channelId; // 0 = respond everywhere
+    private readonly HashSet<ulong> _channelIds = new(); // empty = respond everywhere
+
+    // Parse one or more channel IDs from free text (commas, spaces, semicolons or new lines).
+    private static IEnumerable<ulong> ParseChannelIds(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) yield break;
+        foreach (var part in raw.Split([',', ' ', ';', '\n', '\r', '\t'], StringSplitOptions.RemoveEmptyEntries))
+            if (ulong.TryParse(part.Trim(), out var id))
+                yield return id;
+    }
 
     private static readonly string[] StatNames = ["HP", "Atk", "Def", "SpA", "SpD", "Spe"];
     private static readonly string[] TeraTypes =
@@ -42,7 +51,8 @@ public sealed class BotRunner
     {
         if (IsRunning) return;
         _guildId = guildId;
-        _channelId = ulong.TryParse(channelId, out var ch) ? ch : 0;
+        _channelIds.Clear();
+        foreach (var id in ParseChannelIds(channelId)) _channelIds.Add(id);
         _client = new DiscordSocketClient(new DiscordSocketConfig
         {
             GatewayIntents = GatewayIntents.Guilds,
@@ -88,19 +98,11 @@ public sealed class BotRunner
         Log?.Invoke("Ready. Use \"Post Creator Panel\" to place the button in your channel.");
     }
 
-    /// <summary>Posts the permanent creator panel (embed + button) into the configured channel.</summary>
+    /// <summary>Posts the permanent creator panel (embed + button) into every configured channel.</summary>
     public async Task PostPanelAsync()
     {
         if (_client is null || !IsRunning) { Log?.Invoke("Start the bot before posting the panel."); return; }
-        if (_channelId == 0) { Log?.Invoke("Set a Channel ID first, then post the panel."); return; }
-
-        var channel = _client.GetChannel(_channelId) as IMessageChannel
-                      ?? await _client.Rest.GetChannelAsync(_channelId) as IMessageChannel;
-        if (channel is null)
-        {
-            Log?.Invoke($"Could not find channel {_channelId}. Check the Channel ID and that the bot can see it.");
-            return;
-        }
+        if (_channelIds.Count == 0) { Log?.Invoke("Set at least one Channel ID first, then post the panel."); return; }
 
         var embed = new EmbedBuilder()
             .WithTitle("✨ Pokémon Creator")
@@ -114,8 +116,21 @@ public sealed class BotRunner
             .WithButton("🛠️ Create Pokémon", "open_creator", ButtonStyle.Primary)
             .Build();
 
-        await channel.SendMessageAsync(embed: embed, components: comp);
-        Log?.Invoke($"Posted creator panel to channel {_channelId}.");
+        int posted = 0;
+        foreach (var id in _channelIds)
+        {
+            var channel = _client.GetChannel(id) as IMessageChannel
+                          ?? await _client.Rest.GetChannelAsync(id) as IMessageChannel;
+            if (channel is null)
+            {
+                Log?.Invoke($"Could not find channel {id}. Check the ID and that the bot can see it.");
+                continue;
+            }
+            await channel.SendMessageAsync(embed: embed, components: comp);
+            Log?.Invoke($"Posted creator panel to channel {id}.");
+            posted++;
+        }
+        Log?.Invoke($"Done — posted the panel to {posted} channel(s).");
     }
 
     // ───────────────── interaction handlers ─────────────────
@@ -170,9 +185,9 @@ public sealed class BotRunner
         // The panel button opens a fresh private editor for whoever clicked.
         if (c.Data.CustomId == "open_creator")
         {
-            if (_channelId != 0 && c.ChannelId != _channelId)
+            if (_channelIds.Count > 0 && (c.ChannelId is null || !_channelIds.Contains(c.ChannelId.Value)))
             {
-                await c.RespondAsync($"❌ This panel only works in <#{_channelId}>.", ephemeral: true);
+                await c.RespondAsync("❌ This panel can only be used in its designated channel(s).", ephemeral: true);
                 return;
             }
             var fresh = new Session { Step = 0 };   // no game pre-selected

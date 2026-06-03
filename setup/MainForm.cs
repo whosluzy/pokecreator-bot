@@ -67,7 +67,7 @@ public sealed class MainForm : Form
         root.Controls.Add(LabeledRow("Server ID (optional — instant commands)", _guild));
 
         // Channel row
-        root.Controls.Add(LabeledRow("Channel ID (optional — bot only replies in this channel)", _channel));
+        root.Controls.Add(LabeledRow("Channel IDs (optional — separate multiple with commas; bot only replies in these)", _channel));
 
         // Buttons row
         var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Margin = new Padding(0, 8, 0, 8) };
