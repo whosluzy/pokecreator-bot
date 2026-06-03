@@ -17,6 +17,21 @@ public sealed class BotRunner
     private readonly PkHexService _svc = new();
     private readonly ConcurrentDictionary<ulong, Session> _sessions = new();
     private readonly ConcurrentDictionary<string, List<ItemInfo>> _itemCache = new();
+    // Ephemeral ("only you can see") messages we've sent each user, so we can clear the
+    // clutter when they start over or once they've received their format.
+    private readonly ConcurrentDictionary<ulong, List<IUserMessage>> _userEphemerals = new();
+
+    private async Task ClearEphemerals(ulong userId)
+    {
+        if (!_userEphemerals.TryRemove(userId, out var msgs)) return;
+        foreach (var m in msgs)
+        {
+            try { await m.DeleteAsync(); } catch { /* already gone or token expired */ }
+        }
+    }
+
+    private void TrackEphemeral(ulong userId, IUserMessage msg) =>
+        _userEphemerals.AddOrUpdate(userId, _ => [msg], (_, list) => { list.Add(msg); return list; });
     private DiscordSocketClient? _client;
     private string? _guildId;
     private readonly HashSet<ulong> _channelIds = new(); // empty = respond everywhere
@@ -223,9 +238,12 @@ public sealed class BotRunner
                 await c.RespondAsync("❌ This panel can only be used in its designated channel(s).", ephemeral: true);
                 return;
             }
+            // Clear any leftover private messages from a previous build so they don't pile up.
+            await ClearEphemerals(c.User.Id);
             var fresh = new Session { Step = 0 };   // no game pre-selected
             _sessions[c.User.Id] = fresh;
             await c.RespondAsync(embed: BuildEmbed(fresh), components: BuildComponents(fresh), ephemeral: true);
+            TrackEphemeral(c.User.Id, await c.GetOriginalResponseAsync());
             return;
         }
 
@@ -282,21 +300,31 @@ public sealed class BotRunner
             case "generate":
             {
                 if (s.Species == 0) { await c.RespondAsync("Pick a Pokémon first.", ephemeral: true); return; }
-                await c.DeferAsync(ephemeral: true);
+                await c.DeferAsync();   // acknowledge by deferring the editor update
 
                 // Run it through the AutoLegality Mod. Illegal combinations are refused here.
                 var result = _svc.GenerateLegal(BuildConfig(s));
                 if (!result.Ok)
                 {
-                    await c.FollowupAsync($"❌ **Can't create that legally.**\n{result.Report}", ephemeral: true);
+                    // Keep the wizard up (with an error note) so they can adjust.
+                    await c.ModifyOriginalResponseAsync(m =>
+                    {
+                        m.Content = $"❌ **Can't create that legally.** {result.Report}";
+                        m.Embed = BuildEmbed(s);
+                        m.Components = BuildComponents(s);
+                    });
                     return;
                 }
 
-                // Confirm legality, then send the format ALONE in its own message so it copies cleanly.
-                await c.FollowupAsync(
+                // Success: remove the wizard and any earlier private messages, then send only
+                // the legality note + the format so the user's view stays clean.
+                try { await c.DeleteOriginalResponseAsync(); } catch { }
+                await ClearEphemerals(c.User.Id);
+
+                TrackEphemeral(c.User.Id, await c.FollowupAsync(
                     $"✅ **This Pokémon is legal.**\n📋 Copy the format below and paste it into the **{GameName(s.Game)}** bot channel, then send it to request this Pokémon:",
-                    ephemeral: true);
-                await c.FollowupAsync(result.TradeText, ephemeral: true);
+                    ephemeral: true));
+                TrackEphemeral(c.User.Id, await c.FollowupAsync(result.TradeText, ephemeral: true));
                 return;
             }
         }
