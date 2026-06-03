@@ -569,19 +569,21 @@ public class PkHexService
             .ToList();
         bool canBeShiny = shinyAll.Any(e => e.Shiny != Shiny.Never);
 
-        // Lowest level a SHINY can legally be — based ONLY on shiny-capable encounters.
-        // For event-shiny-only mons this differs from the normal minimum
-        // (e.g. shiny Koraidon/Miraidon can only exist at Lv100).
-        var shinySelf = shinyAll.Where(e => e.Species == (ushort)species && e.Shiny != Shiny.Never).ToList();
-        int shinyMinLevel =
-            shinySelf.Count > 0 ? shinySelf.Min(e => (int)e.LevelMin)
-            : canBeShiny ? evoMin
-            : minLevel;
-        // Same evolution-floor cap as above (e.g. a shiny final-evo only sold as a Lv100 event
-        // can still be evolved up at evoMin). Base-stage event-shiny mons (evoMin==1, e.g. shiny
-        // Koraidon locked to Lv100) are untouched.
-        if (evoMin > 1 && canBeShiny && evoMin < shinyMinLevel)
-            shinyMinLevel = evoMin;
+        // Lowest level a SHINY can legally be. A shiny is the same species, so it can never be
+        // BELOW the normal minimum — but an event-only shiny can push it HIGHER (e.g. shiny
+        // Rayquaza in SV is a Lv75 event though the normal minimum is 70; shiny Koraidon is Lv100).
+        //
+        // Find the shiny source level native-first (allEncounters is native-first and never
+        // includes GO). Then floor it at the normal minimum with Max(): this both honours event
+        // bumps and neutralises Pokémon GO's anomalous low-level shinies (down to Lv1), which
+        // would otherwise drag the floor below the species' real minimum.
+        var shinySelf = allEncounters
+            .Where(e => e.Species == (ushort)species && e.Shiny != Shiny.Never).ToList();
+        if (shinySelf.Count == 0)
+            shinySelf = shinyAll
+                .Where(e => e.Species == (ushort)species && e.Shiny != Shiny.Never).ToList();
+        int rawShinyMin = shinySelf.Count > 0 ? shinySelf.Min(e => (int)e.LevelMin) : minLevel;
+        int shinyMinLevel = canBeShiny ? Math.Max(minLevel, rawShinyMin) : minLevel;
 
         return new PokemonMeta(validGenders, statSystem, statMax, statTotal, hasTeraType, canBeShiny, hasScale, hasAlpha, minLevel, 100, alphaMinLevel, alphaMaxLevel, shinyMinLevel);
     }
