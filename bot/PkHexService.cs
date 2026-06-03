@@ -522,6 +522,11 @@ public class PkHexService
         var alphaEncounters = selfEncounters.Where(e => e is EncounterSlot9a { IsAlpha: true }).ToList();
         var normalSelf = selfEncounters.Where(e => e is not EncounterSlot9a { IsAlpha: true }).ToList();
 
+        // The level a pre-evolution must reach to become this species (1 for base stages,
+        // 0 for stone/trade evolutions). An evolved Pokémon can ALWAYS be obtained at this
+        // level by levelling its pre-evo, so it's the true floor.
+        int evoMin = EvolutionMinLevel(context, (ushort)species, (byte)form);
+
         int minLevel;
         if (normalSelf.Count > 0)
             minLevel = normalSelf.Min(e => (int)e.LevelMin);
@@ -529,7 +534,14 @@ public class PkHexService
             minLevel = selfEncounters.Min(e => (int)e.LevelMin);
         else
             // Evolve-only here (no direct encounter): use the real evolution level.
-            minLevel = EvolutionMinLevel(context, (ushort)species, (byte)form);
+            minLevel = evoMin;
+
+        // Never let the floor sit above the evolution level. Some final-evolution Pokémon
+        // only appear in a game via a high-level event/transfer (e.g. Blastoise via a Lv100
+        // distribution in SV), but they can still legally exist from Lv<evoMin> by evolving a
+        // pre-evolution. Only applies to level-based evolutions (evoMin > 1).
+        if (evoMin > 1 && evoMin < minLevel)
+            minLevel = evoMin;
 
         int alphaMinLevel = alphaEncounters.Count > 0
             ? alphaEncounters.Min(e => (int)e.LevelMin) : 0;
@@ -550,8 +562,13 @@ public class PkHexService
         var shinySelf = shinyAll.Where(e => e.Species == (ushort)species && e.Shiny != Shiny.Never).ToList();
         int shinyMinLevel =
             shinySelf.Count > 0 ? shinySelf.Min(e => (int)e.LevelMin)
-            : canBeShiny ? EvolutionMinLevel(context, (ushort)species, (byte)form)
+            : canBeShiny ? evoMin
             : minLevel;
+        // Same evolution-floor cap as above (e.g. a shiny final-evo only sold as a Lv100 event
+        // can still be evolved up at evoMin). Base-stage event-shiny mons (evoMin==1, e.g. shiny
+        // Koraidon locked to Lv100) are untouched.
+        if (evoMin > 1 && canBeShiny && evoMin < shinyMinLevel)
+            shinyMinLevel = evoMin;
 
         return new PokemonMeta(validGenders, statSystem, statMax, statTotal, hasTeraType, canBeShiny, hasScale, hasAlpha, minLevel, 100, alphaMinLevel, alphaMaxLevel, shinyMinLevel);
     }
@@ -687,7 +704,8 @@ public class PkHexService
             .Where(l => !l.StartsWith("Friendship:") && !l.StartsWith("Shiny:"))
             // Drop a placeholder ability line ("Ability: (None)") when no real ability is chosen —
             // it isn't a valid Showdown line and makes ALM reject the set. ALM picks a legal ability.
-            .Where(l => !(l.StartsWith("Ability:") && (config.Ability <= 0 || l.Contains("(None)"))))
+            // Legends: Z-A doesn't use abilities, so never emit one there.
+            .Where(l => !(l.StartsWith("Ability:") && (config.Ability <= 0 || config.Game == "ZA" || l.Contains("(None)"))))
             // Only show EVs / IVs when the user actually set them (ALM fills legal defaults otherwise).
             .Where(l => config.EVsSet || !l.StartsWith("EVs:"))
             .Where(l => config.IVsSet || !l.StartsWith("IVs:"))

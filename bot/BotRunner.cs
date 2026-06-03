@@ -555,7 +555,7 @@ public sealed class BotRunner
             .AddField("Shiny", s.Shiny ? "✨ Yes" : "No", true)
             .AddField("Alpha", s.Meta?.HasAlpha == true ? (s.Alpha ? "α Yes" : "No") : "N/A", true)
             .AddField("Nature", NatureName(s.Nature), true)
-            .AddField("Ability", AbilityName(s, s.Ability), true)
+            .AddField("Ability", s.Game == "ZA" ? "N/A" : AbilityName(s, s.Ability), true)
             .AddField("Gender", GenderName(s.Gender), true)
             .AddField("Ball Caught", BallName(s, s.Ball), true)
             .AddField("Held Item", s.HeldItem == 0 ? "None" : ItemName(s, s.HeldItem), true)
@@ -686,8 +686,8 @@ public sealed class BotRunner
                 .WithPlaceholder($"Pick your Pokémon… (page {s.Page + 1}/{totalPages})");
             foreach (var r in pageItems)
             {
-                // Pikachu's alternate forms are hats/caps → tag "Hat" instead of HOME.
-                string tag = r.Id == 25 && r.Form > 0 ? " (Hat)" : r.Native ? "" : " ⇄HOME";
+                // Pikachu's alternate forms are hats/caps → tag "Hat".
+                string tag = r.Id == 25 && r.Form > 0 ? " (Hat)" : "";
                 var label = r.Name + (r.FormName != null ? $" ({r.FormName})" : "") + tag;
                 pick.AddOption(label.Length > 100 ? label[..100] : label, $"{r.Id}:{r.Form}");
             }
@@ -725,7 +725,8 @@ public sealed class BotRunner
                 if (Forms(s).Count > 1) b.WithSelectMenu(FormMenu(s), r++);
                 break;
             case "battle":
-                b.WithSelectMenu(AbilityMenu(s), r++);
+                // Legends: Z-A does not use Abilities — don't offer the option there.
+                if (s.Game != "ZA") b.WithSelectMenu(AbilityMenu(s), r++);
                 b.WithSelectMenu(GenderMenu(s), r++);
                 if (s.Meta?.HasTeraType == true) b.WithSelectMenu(TeraMenu(s), r++);
                 break;
