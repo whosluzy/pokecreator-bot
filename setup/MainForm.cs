@@ -87,7 +87,8 @@ public sealed class MainForm : Form
         panel.Click += async (_, _) =>
         {
             if (!_running) { MessageBox.Show("Start the bot first.", "Not running", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-            await _runner.PostPanelAsync();
+            try { await _runner.PostPanelAsync(); }
+            catch (Exception ex) { MessageBox.Show(ex.Message, "Could not post panel", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         };
 
         var update = new Button { Text = "⭳ Update", Width = 110, Height = 38, FlatStyle = FlatStyle.Flat };

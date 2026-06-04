@@ -167,18 +167,31 @@ public sealed class BotRunner
         int posted = 0;
         foreach (var id in _channelIds)
         {
-            var channel = _client.GetChannel(id) as IMessageChannel
-                          ?? await _client.Rest.GetChannelAsync(id) as IMessageChannel;
-            if (channel is null)
+            try
             {
-                Log?.Invoke($"Could not find channel {id}. Check the ID and that the bot can see it.");
-                continue;
+                var channel = _client.GetChannel(id) as IMessageChannel
+                              ?? await _client.Rest.GetChannelAsync(id) as IMessageChannel;
+                if (channel is null)
+                {
+                    Log?.Invoke($"⚠️ Could not find channel {id}. Check the ID and that the bot can see it.");
+                    continue;
+                }
+                await channel.SendMessageAsync(embed: embed, components: comp);
+                Log?.Invoke($"Posted creator panel to channel {id}.");
+                posted++;
             }
-            await channel.SendMessageAsync(embed: embed, components: comp);
-            Log?.Invoke($"Posted creator panel to channel {id}.");
-            posted++;
+            catch (Discord.Net.HttpException ex) when (ex.DiscordCode == DiscordErrorCode.MissingPermissions)
+            {
+                // Most common setup mistake: the bot can't post in that channel.
+                Log?.Invoke($"⚠️ Missing permissions in channel {id}. Give the bot 'View Channel', " +
+                            "'Send Messages' and 'Embed Links' there, then post again.");
+            }
+            catch (Exception ex)
+            {
+                Log?.Invoke($"⚠️ Couldn't post to channel {id}: {ex.Message}");
+            }
         }
-        Log?.Invoke($"Done — posted the panel to {posted} channel(s).");
+        Log?.Invoke($"Done — posted the panel to {posted} of {_channelIds.Count} channel(s).");
     }
 
     // ───────────────── interaction handlers ─────────────────
