@@ -73,13 +73,29 @@ public sealed class BotRunner
             GatewayIntents = GatewayIntents.Guilds,
             LogLevel = LogSeverity.Info,
         });
-        _client.Log += m => { Log?.Invoke($"[{m.Severity}] {m.Source}: {m.Message} {m.Exception}"); return Task.CompletedTask; };
+        _client.Log += m =>
+        {
+            var ex = m.Exception;
+            // Routine gateway churn (Discord asking us to reconnect, sockets closing, shutdown
+            // cancellation) is expected — log it quietly without the scary stack trace.
+            bool benign = ex is OperationCanceledException
+                || ex?.GetType().Name is "GatewayReconnectException" or "WebSocketException"
+                    or "WebSocketClosedException";
+            if (benign)
+                Log?.Invoke($"[Info] {m.Source}: {m.Message}");
+            else
+                Log?.Invoke($"[{m.Severity}] {m.Source}: {m.Message} {m.Exception}");
+            return Task.CompletedTask;
+        };
         _client.Ready += OnReady;
         _client.Connected += () => { IsRunning = true; Log?.Invoke("Connected."); return Task.CompletedTask; };
         _client.Disconnected += _ => { IsRunning = false; Log?.Invoke("Disconnected."); return Task.CompletedTask; };
-        _client.SelectMenuExecuted += c => Guard(OnSelect(c), c);
-        _client.ButtonExecuted += c => Guard(OnButton(c), c);
-        _client.ModalSubmitted += m => Guard(OnModal(m), m);
+        // Handle interactions on the thread pool, NOT the gateway thread. Returning immediately
+        // keeps the gateway responsive (heartbeats), avoiding "handler is blocking the gateway
+        // task" warnings and the reconnects/interaction failures they cause.
+        _client.SelectMenuExecuted += c => { _ = Task.Run(() => Guard(OnSelect(c), c)); return Task.CompletedTask; };
+        _client.ButtonExecuted += c => { _ = Task.Run(() => Guard(OnButton(c), c)); return Task.CompletedTask; };
+        _client.ModalSubmitted += m => { _ = Task.Run(() => Guard(OnModal(m), m)); return Task.CompletedTask; };
 
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
