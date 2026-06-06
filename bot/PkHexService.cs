@@ -16,6 +16,11 @@ public class PkHexService
         APILegality.SetMatchingBalls = true;     // pick a legal ball when none is forced
         APILegality.AllowBatchCommands = true;   // honor .Scale=, .MetDate=, .OriginalTrainerFriendship=, etc.
         APILegality.Timeout = 20;
+
+        // Allow Pokémon HOME transfers: many species are only obtainable in a game by transferring
+        // in from another game via HOME (e.g. Arceus in Scarlet/Violet). Accepting a missing HOME
+        // tracker (as legalized mons have) lets ALM build these — without it they come back Failed.
+        ParseSettings.Settings.HOMETransfer.HOMETransferTrackerNotPresent = Severity.Fishy;
     }
     private static readonly Dictionary<string, GameVersion> GameMap = new()
     {
@@ -726,6 +731,9 @@ public class PkHexService
             .Where(l => config.TeraSet || !l.StartsWith("Tera Type:"))
             .Where(l => config.EVsSet || !l.StartsWith("EVs:"))
             .Where(l => config.IVsSet || !l.StartsWith("IVs:"))
+            // Dynamax Level: only when set. GetShowdownText always writes "Dynamax Level: 0" for
+            // Sword/Shield, and that line makes ALM reject the set — so it must be dropped.
+            .Where(l => config.DynamaxSet || !l.StartsWith("Dynamax Level:"))
             .ToList();
 
         var extra = new List<string>();
