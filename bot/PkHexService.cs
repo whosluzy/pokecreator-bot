@@ -197,6 +197,18 @@ public class PkHexService
             }
         }
 
+        // Sword/Shield only: offer a Gigantamax variant ("Name-Gmax") for every species/form
+        // that can Gigantamax (Gigantamax.CanToggle covers them all, incl. both Urshifu styles).
+        if (game == "SWSH")
+        {
+            var gmax = result
+                .Where(s => Gigantamax.CanToggle((ushort)s.Id, (byte)s.Form))
+                .Select(s => s with { FormName = s.FormName == null ? "Gmax" : $"{s.FormName} Gmax", Gmax = true })
+                .ToList();
+            result.AddRange(gmax);
+            result = result.OrderBy(x => x.Id).ThenBy(x => x.Form).ThenBy(x => x.Gmax).ToList();
+        }
+
         _speciesCache[game] = result;
         return result;
     }
@@ -709,6 +721,28 @@ public class PkHexService
             .ToList();
     }
 
+    // Inserts "-Gmax" right after the species/form name on a Showdown first line, handling the
+    // gender tag, held item and nickname forms:  "Charizard (M) @ Item" -> "Charizard-Gmax (M) @ Item".
+    private static string AddGmaxSuffix(string firstLine)
+    {
+        int open = firstLine.IndexOf('(');
+        int close = firstLine.IndexOf(')');
+        // Nicknamed: "Nick (Species) @ Item" — the parentheses hold the species, not the gender.
+        if (open >= 0 && close > open)
+        {
+            var inside = firstLine.Substring(open + 1, close - open - 1);
+            if (inside is not ("M" or "F" or "N"))
+                return firstLine[..close] + "-Gmax" + firstLine[close..];
+        }
+        // Otherwise the species runs from the start to the first " (" (gender) or " @" (item).
+        int cut = firstLine.Length;
+        int g = firstLine.IndexOf(" (");
+        int it = firstLine.IndexOf(" @");
+        if (g >= 0) cut = Math.Min(cut, g);
+        if (it >= 0) cut = Math.Min(cut, it);
+        return firstLine[..cut] + "-Gmax" + firstLine[cut..];
+    }
+
     // Builds the Showdown + AutoLegality "regen" set text from a config. This is exactly the
     // text a SysBot ALM instance consumes: standard Showdown lines plus regen extras
     // (Ball:, Alpha:, OT:, .Scale=, .MetDate=, ...). No ".trade" prefix.
@@ -731,10 +765,16 @@ public class PkHexService
             .Where(l => config.TeraSet || !l.StartsWith("Tera Type:"))
             .Where(l => config.EVsSet || !l.StartsWith("EVs:"))
             .Where(l => config.IVsSet || !l.StartsWith("IVs:"))
-            // Dynamax Level: only when set. GetShowdownText always writes "Dynamax Level: 0" for
-            // Sword/Shield, and that line makes ALM reject the set — so it must be dropped.
-            .Where(l => config.DynamaxSet || !l.StartsWith("Dynamax Level:"))
+            // Dynamax level is never used. GetShowdownText always writes "Dynamax Level: 0" for
+            // Sword/Shield, and that line makes ALM reject the set — so always drop it.
+            .Where(l => !l.StartsWith("Dynamax Level:"))
+            // Gigantamax is shown in the species name ("Charizard-Gmax") instead of as a line.
+            .Where(l => !l.StartsWith("Gigantamax:"))
             .ToList();
+
+        // Render Gigantamax as a "-Gmax" suffix on the species name (e.g. "Charizard-Gmax").
+        if (config.Gmax && baseLines.Count > 0)
+            baseLines[0] = AddGmaxSuffix(baseLines[0]);
 
         var extra = new List<string>();
 
@@ -755,10 +795,6 @@ public class PkHexService
             && !string.IsNullOrWhiteSpace(config.MetDate)
             && DateOnly.TryParse(config.MetDate, out var d))
             extra.Add($".MetDate={d:yyyyMMdd}");
-
-        // Dynamax Level — only when the user explicitly set it (Sword/Shield).
-        if (config.DynamaxSet)
-            extra.Add($".DynamaxLevel={config.DynamaxLevel}");
 
         // Trainer info — only when the user opts into a custom trainer.
         // Otherwise AutoOT applies the receiving trainer's OT/TID/SID on trade.
@@ -1012,8 +1048,8 @@ public class PkHexService
             if (config.IsAlpha)
                 pa8.RibbonMarkAlpha = true;
         }
-        if (config.DynamaxSet && pk is PK8 pk8)
-            pk8.DynamaxLevel = (byte)Math.Clamp(config.DynamaxLevel, 0, 10);
+        if (config.Gmax && pk is PK8 g8)
+            g8.CanGigantamax = true;
 
         // Met date
         if (!string.IsNullOrWhiteSpace(config.MetDate)

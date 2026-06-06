@@ -228,10 +228,11 @@ public sealed class BotRunner
             {
                 var bits = v.Split(':');
                 int id = int.Parse(bits[0]), form = bits.Length > 1 ? int.Parse(bits[1]) : 0;
-                var pick = s.SpeciesList.FirstOrDefault(x => x.Id == id && x.Form == form);
+                bool gmax = bits.Length > 2 && bits[2] == "1";
+                var pick = s.SpeciesList.FirstOrDefault(x => x.Id == id && x.Form == form && x.Gmax == gmax);
                 if (pick != null)
                 {
-                    s.Species = pick.Id; s.SpeciesName = pick.Name; s.Form = pick.Form;
+                    s.Species = pick.Id; s.SpeciesName = pick.Name; s.Form = pick.Form; s.Gmax = pick.Gmax;
                     ApplyMeta(s); RefreshLists(s);
                     s.Step = NextAfterPokemon(s);
                 }
@@ -380,7 +381,7 @@ public sealed class BotRunner
                 if (s.SearchResults.Count == 1)
                 {
                     var pick = s.SearchResults[0];
-                    s.Species = pick.Id; s.SpeciesName = pick.Name; s.Form = pick.Form;
+                    s.Species = pick.Id; s.SpeciesName = pick.Name; s.Form = pick.Form; s.Gmax = pick.Gmax;
                     ApplyMeta(s); RefreshLists(s);
                     s.Step = NextAfterPokemon(s);
                 }
@@ -438,7 +439,6 @@ public sealed class BotRunner
                 s.Nickname = Val("nick");
                 // Only "set" (and thus added to the format) when the user actually enters a value.
                 if (DateOnly.TryParse(Val("met"), out var d)) { s.MetDate = d.ToString("yyyy-MM-dd"); s.MetDateSet = true; }
-                if (int.TryParse(Val("dmax"), out var dm)) { s.DynamaxLevel = Math.Clamp(dm, 0, 10); s.DynamaxSet = true; }
                 break;
             case "trainer_modal":
                 s.OT = Val("ot"); s.UseCustomOT = true;
@@ -456,7 +456,7 @@ public sealed class BotRunner
         s.Game = game;
         s.SpeciesList = _svc.GetAllSpecies(game);
         var first = s.SpeciesList.FirstOrDefault();
-        s.Species = first?.Id ?? 0; s.SpeciesName = first?.Name ?? ""; s.Form = first?.Form ?? 0;
+        s.Species = first?.Id ?? 0; s.SpeciesName = first?.Name ?? ""; s.Form = first?.Form ?? 0; s.Gmax = false;
         ApplyMeta(s); RefreshLists(s);
     }
 
@@ -562,7 +562,7 @@ public sealed class BotRunner
 
     private PokemonConfig BuildConfig(Session s) => new()
     {
-        Game = s.Game, Species = s.Species, Form = s.Form, Level = s.Level,
+        Game = s.Game, Species = s.Species, Form = s.Form, Level = s.Level, Gmax = s.Gmax,
         IsShiny = s.Shiny, IsAlpha = s.Alpha, Gender = s.Gender,
         Nature = s.Nature, NatureSet = s.NatureSet,
         Ability = s.Ability, AbilitySet = s.AbilitySet,
@@ -571,7 +571,6 @@ public sealed class BotRunner
         Moves = (int[])s.Moves.Clone(), EVs = (int[])s.EVs.Clone(), IVs = (int[])s.IVs.Clone(),
         EVsSet = s.EVsSet, IVsSet = s.IVsSet,
         MetDate = s.MetDate, MetDateSet = s.MetDateSet,
-        DynamaxLevel = s.DynamaxLevel, DynamaxSet = s.DynamaxSet,
         UseCustomOT = s.UseCustomOT, OT = s.OT, TID = s.TID, SID = s.SID,
         Language = s.Language, Nickname = s.Nickname,
     };
@@ -584,7 +583,8 @@ public sealed class BotRunner
     private Embed BuildEmbed(Session s)
     {
         var formTxt = s.Form > 0 ? $" ({FormNameOf(s)})" : "";
-        var chosen = s.Species == 0 ? "—" : $"{s.SpeciesName}{formTxt}";
+        var gmaxTxt = s.Gmax ? " — Gmax" : "";
+        var chosen = s.Species == 0 ? "—" : $"{s.SpeciesName}{formTxt}{gmaxTxt}";
 
         // Guided steps get a focused embed.
         if (s.Step <= 7)
@@ -787,7 +787,7 @@ public sealed class BotRunner
                 // Pikachu's alternate forms are hats/caps → tag "Hat".
                 string tag = r.Id == 25 && r.Form > 0 ? " (Hat)" : "";
                 var label = r.Name + (r.FormName != null ? $" ({r.FormName})" : "") + tag;
-                pick.AddOption(label.Length > 100 ? label[..100] : label, $"{r.Id}:{r.Form}");
+                pick.AddOption(label.Length > 100 ? label[..100] : label, $"{r.Id}:{r.Form}:{(r.Gmax ? 1 : 0)}");
             }
             b.WithSelectMenu(pick, 0);
         }
@@ -943,7 +943,7 @@ public sealed class BotRunner
         }
         return m;
     }
-    private static List<SpeciesInfo> Forms(Session s) => s.SpeciesList.Where(x => x.Id == s.Species).ToList();
+    private static List<SpeciesInfo> Forms(Session s) => s.SpeciesList.Where(x => x.Id == s.Species && !x.Gmax).ToList();
     private static SelectMenuBuilder FormMenu(Session s)
     {
         var m = new SelectMenuBuilder().WithCustomId("form").WithPlaceholder("Form");
@@ -997,15 +997,11 @@ public sealed class BotRunner
 
     private static Modal ExtrasModal(Session s)
     {
-        // Met Date / Dynamax are left BLANK on purpose — they're only added to the output
-        // if the user actually fills them in.
+        // Met Date is left BLANK on purpose — only added to the output if the user fills it in.
         var b = new ModalBuilder().WithTitle("Extras").WithCustomId("extras_modal")
             .AddTextInput("Nickname (blank = species name)", "nick", required: false, value: s.Nickname)
             .AddTextInput("Met Date (blank = leave default)", "met", required: false,
                 value: s.MetDateSet ? s.MetDate : "", placeholder: "YYYY-MM-DD");
-        if (s.Game == "SWSH")
-            b.AddTextInput("Dynamax Level (blank = leave default)", "dmax", required: false,
-                value: s.DynamaxSet ? s.DynamaxLevel.ToString() : "", placeholder: "0-10");
         return b.Build();
     }
 
@@ -1022,7 +1018,7 @@ public sealed class BotRunner
     private string ItemName(Session s, int id) => Items(s.Game).FirstOrDefault(i => i.Id == id)?.Name ?? $"#{id}";
     private static string MoveName(Session s, int id) => s.MoveList.FirstOrDefault(m => m.Id == id)?.Name ?? $"#{id}";
     private static string GenderName(int g) => g switch { 0 => "Male", 1 => "Female", _ => "Genderless" };
-    private static string FormNameOf(Session s) => s.SpeciesList.FirstOrDefault(x => x.Id == s.Species && x.Form == s.Form)?.FormName ?? $"Form {s.Form}";
+    private static string FormNameOf(Session s) => s.SpeciesList.FirstOrDefault(x => x.Id == s.Species && x.Form == s.Form && !x.Gmax)?.FormName ?? $"Form {s.Form}";
     private static string FormatStats(int[] v) => string.Join(" / ", StatNames.Select((n, i) => $"{n} {v[i]}"));
     private static string SectionLabel(string id) => Sections.FirstOrDefault(x => x.Item1 == id).Item2 ?? id;
 
@@ -1036,6 +1032,7 @@ public sealed class BotRunner
         public int Species;
         public string SpeciesName = "";
         public int Form;
+        public bool Gmax;
         public int Level = 1;
         public bool Shiny, Alpha, UseCustomOT;
         public int Nature, Ability, Gender, Ball = 4, HeldItem, TeraType;
@@ -1043,8 +1040,7 @@ public sealed class BotRunner
         public int[] EVs = new int[6];
         public int[] IVs = [31, 31, 31, 31, 31, 31];
         public int TID, SID;
-        public bool MetDateSet, DynamaxSet, EVsSet, IVsSet, NatureSet, BallSet, AbilitySet, TeraSet;
-        public int DynamaxLevel;
+        public bool MetDateSet, EVsSet, IVsSet, NatureSet, BallSet, AbilitySet, TeraSet;
         public string MetDate = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
         public string OT = "Trainer", Language = "English", Nickname = "";
         public string Section = "pokemon";

@@ -2,7 +2,7 @@ namespace PokecreatorBot.Data;
 
 public record GameEntry(string Id, string Name);
 
-public record SpeciesInfo(int Id, string Name, bool Native = true, int Form = 0, string? FormName = null);
+public record SpeciesInfo(int Id, string Name, bool Native = true, int Form = 0, string? FormName = null, bool Gmax = false);
 
 public record NatureInfo(int Id, string Name, string RaisedStat, string LoweredStat);
 
@@ -57,8 +57,6 @@ public record PokemonConfig
     public bool IsAlpha { get; init; } = false;
     public string MetDate { get; init; } = DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd");
     public bool MetDateSet { get; init; } = false;
-    public int DynamaxLevel { get; init; } = 0;
-    public bool DynamaxSet { get; init; } = false;
     public bool UseCustomOT { get; init; } = false;
     public string OT { get; init; } = "Trainer";
     public int TID { get; init; }
@@ -67,6 +65,7 @@ public record PokemonConfig
     public string? Nickname { get; init; }
     public int TeraType { get; init; } = 18;
     public bool TeraSet { get; init; } = false;
+    public bool Gmax { get; init; } = false;
 }
 
 public record ValidationResult(bool IsLegal, string Report, List<LegalityIssue> Issues);
