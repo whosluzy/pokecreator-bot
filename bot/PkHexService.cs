@@ -205,6 +205,11 @@ public class PkHexService
                 .Where(s => Gigantamax.CanToggle((ushort)s.Id, (byte)s.Form))
                 .Select(s => s with { FormName = s.FormName == null ? "Gmax" : $"{s.FormName} Gmax", Gmax = true })
                 .ToList();
+            // Gigantamax Melmetal is a special event (Gigantamax.CanToggle is false for it) but is
+            // legal at Lv100, so add it explicitly.
+            var melmetal = result.FirstOrDefault(s => s.Id == 809 && !s.Gmax);
+            if (melmetal != null)
+                gmax.Add(melmetal with { FormName = "Gmax", Gmax = true });
             result.AddRange(gmax);
             result = result.OrderBy(x => x.Id).ThenBy(x => x.Form).ThenBy(x => x.Gmax).ToList();
         }
@@ -481,17 +486,17 @@ public class PkHexService
         catch { return 1; }
     }
 
-    public PokemonMeta GetMeta(string game, int species, int form = 0)
+    public PokemonMeta GetMeta(string game, int species, int form = 0, bool gmax = false)
     {
-        var cacheKey = $"{game}:{species}:{form}";
+        var cacheKey = $"{game}:{species}:{form}:{gmax}";
         if (_metaCache.TryGetValue(cacheKey, out var cachedMeta))
             return cachedMeta;
-        var meta = ComputeMeta(game, species, form);
+        var meta = ComputeMeta(game, species, form, gmax);
         _metaCache[cacheKey] = meta;
         return meta;
     }
 
-    private PokemonMeta ComputeMeta(string game, int species, int form)
+    private PokemonMeta ComputeMeta(string game, int species, int form, bool gmax = false)
     {
         if (!GameMap.TryGetValue(game, out var version))
             throw new ArgumentException($"Unknown game: {game}");
@@ -601,6 +606,15 @@ public class PkHexService
                 .Where(e => e.Species == (ushort)species && e.Shiny != Shiny.Never).ToList();
         int rawShinyMin = shinySelf.Count > 0 ? shinySelf.Min(e => (int)e.LevelMin) : minLevel;
         int shinyMinLevel = canBeShiny ? Math.Max(minLevel, rawShinyMin) : minLevel;
+
+        // Gigantamax Melmetal is a one-off event Pokémon: it only exists at Lv100 and is never
+        // shiny. Constrain its meta so the wizard offers only what's legal.
+        if (gmax && species == 809)
+        {
+            minLevel = 100;
+            canBeShiny = false;
+            shinyMinLevel = 100;
+        }
 
         return new PokemonMeta(validGenders, statSystem, statMax, statTotal, hasTeraType, canBeShiny, hasScale, hasAlpha, minLevel, 100, alphaMinLevel, alphaMaxLevel, shinyMinLevel);
     }

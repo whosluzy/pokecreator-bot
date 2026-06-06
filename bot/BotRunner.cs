@@ -463,7 +463,7 @@ public sealed class BotRunner
     private void ApplyMeta(Session s)
     {
         if (s.Species == 0) { s.Meta = null; return; }
-        s.Meta = _svc.GetMeta(s.Game, s.Species, s.Form);
+        s.Meta = _svc.GetMeta(s.Game, s.Species, s.Form, s.Gmax);
         s.Level = Math.Clamp(s.Level, s.Meta.MinLevel > 0 ? s.Meta.MinLevel : 1, 100);
         if (!s.Meta.CanBeShiny) s.Shiny = false;
         if (!s.Meta.HasAlpha) s.Alpha = false;
