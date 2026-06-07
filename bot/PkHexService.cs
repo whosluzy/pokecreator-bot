@@ -818,9 +818,12 @@ public class PkHexService
                 extra.Add($"OT: {config.OT}");
             extra.Add($"TID: {config.TID}");
             extra.Add($"SID: {config.SID}");
-            if (!string.IsNullOrWhiteSpace(config.Language) && config.Language != "English")
-                extra.Add($"Language: {config.Language}");
         }
+
+        // Language is a property of the Pokémon itself, so it applies whenever chosen —
+        // independently of a custom trainer (e.g. "Language: Japanese").
+        if (!string.IsNullOrWhiteSpace(config.Language) && config.Language != "English")
+            extra.Add($"Language: {config.Language}");
 
         var text = string.Join("\n", baseLines).TrimEnd();
         if (extra.Count > 0)
