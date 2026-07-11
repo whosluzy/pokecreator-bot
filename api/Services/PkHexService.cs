@@ -487,18 +487,20 @@ public class PkHexService
 
     public List<NatureInfo> GetNatures()
     {
-        var statNames = new[] { "—", "Atk", "Def", "SpA", "SpD", "Spe" };
+        // Nature stat order (Atk, Def, Spe, SpA, SpD): id / 5 = raised, id % 5 = lowered.
+        var statNames = new[] { "Atk", "Def", "Spe", "SpA", "SpD" };
         var result = new List<NatureInfo>();
 
         for (int i = 0; i < 25; i++)
         {
-            int raised = i % 5;
-            int lowered = i / 5;
+            int raised = i / 5;
+            int lowered = i % 5;
+            bool neutral = raised == lowered;
             result.Add(new NatureInfo(
                 i,
                 _strings.Natures[i],
-                raised == 0 ? "—" : statNames[raised + 1],
-                lowered == 0 ? "—" : statNames[lowered + 1]
+                neutral ? "—" : statNames[raised],
+                neutral ? "—" : statNames[lowered]
             ));
         }
 
